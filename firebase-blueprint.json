@@ -1,0 +1,241 @@
+{
+  "entities": {
+    "product": {
+      "title": "Product",
+      "description": "FitYatra supplement product with full dynamic page configuration and stock",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 256 },
+        "tagline": { "type": "string", "maxLength": 256 },
+        "brand": { "type": "string", "maxLength": 128 },
+        "category": { "type": "string", "maxLength": 128 },
+        "price": { "type": "number" },
+        "originalPrice": { "type": "number" },
+        "discountPercentage": { "type": "number" },
+        "stock": { "type": "number" },
+        "soldCount": { "type": "number" },
+        "sku": { "type": "string", "maxLength": 128 },
+        "isActive": { "type": "boolean" },
+        "isFeatured": { "type": "boolean" },
+        "isBestSeller": { "type": "boolean" },
+        "isSoldOut": { "type": "boolean" },
+        "rating": { "type": "number" },
+        "reviewCount": { "type": "number" },
+        "image": { "type": "string" },
+        "description": { "type": "string" },
+        "descriptionHtml": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "brand", "category", "price", "originalPrice"]
+    },
+    "order": {
+      "title": "Customer Order",
+      "description": "Live customer order with payment verification and status tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "minLength": 2, "maxLength": 128 },
+        "phone": { "type": "string", "minLength": 7, "maxLength": 25 },
+        "email": { "type": "string", "maxLength": 128 },
+        "address": { "type": "string", "minLength": 3, "maxLength": 300 },
+        "region": { "type": "string", "maxLength": 64 },
+        "totalAmount": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "paymentScreenshotUrl": { "type": "string" },
+        "paymentStatus": { "type": "string", "enum": ["pending", "submitted", "verified", "rejected"] },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "customerName", "phone", "address", "totalAmount", "status"]
+    },
+    "review": {
+      "title": "Product Review",
+      "description": "Customer review with admin approval, featured, and attention flags",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "productId": { "type": "string", "maxLength": 128 },
+        "productName": { "type": "string", "maxLength": 256 },
+        "name": { "type": "string", "maxLength": 128 },
+        "rating": { "type": "number" },
+        "comment": { "type": "string", "maxLength": 4096 },
+        "location": { "type": "string", "maxLength": 128 },
+        "imageUrl": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "isFeatured": { "type": "boolean" },
+        "isAttention": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "rating", "comment"]
+    },
+    "payment_setting": {
+      "title": "Payment Method Setting",
+      "description": "Dynamic checkout payment method and QR code configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 128 },
+        "code": { "type": "string", "maxLength": 64 },
+        "enabled": { "type": "boolean" },
+        "accountName": { "type": "string", "maxLength": 128 },
+        "accountNumber": { "type": "string", "maxLength": 128 },
+        "qrImageUrl": { "type": "string" },
+        "instructions": { "type": "string" },
+        "displayOrder": { "type": "number" },
+        "requiresScreenshot": { "type": "boolean" }
+      },
+      "required": ["id", "name", "code", "enabled"]
+    },
+    "banner": {
+      "title": "Storefront Banner",
+      "description": "Promotional banner with uploaded image and CTA",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 256 },
+        "subtitle": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "buttonText": { "type": "string", "maxLength": 64 },
+        "buttonLink": { "type": "string", "maxLength": 256 },
+        "enabled": { "type": "boolean" },
+        "displayLocation": { "type": "string", "enum": ["hero", "product_promo", "popup"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "enabled"]
+    },
+    "store_setting": {
+      "title": "Store Settings",
+      "description": "Global store operational status and contact settings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "openForOrders": { "type": "boolean" },
+        "announcementText": { "type": "string" },
+        "storeName": { "type": "string" },
+        "supportPhone": { "type": "string" },
+        "supportEmail": { "type": "string" },
+        "currency": { "type": "string" },
+        "redefineVideoUrl": { "type": "string" },
+        "redefineVideoPosterUrl": { "type": "string" },
+        "redefineVideoHeading": { "type": "string" },
+        "redefineVideoEnabled": { "type": "boolean" },
+        "isInitialized": { "type": "boolean" }
+      },
+      "required": ["id", "openForOrders"]
+    },
+    "media_file": {
+      "title": "Media File Metadata",
+      "description": "Uploaded video or image metadata stored in Firestore",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 256 },
+        "mimeType": { "type": "string", "maxLength": 128 },
+        "size": { "type": "number" },
+        "chunkCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "mimeType", "chunkCount"]
+    },
+    "media_chunk": {
+      "title": "Media File Chunk",
+      "description": "Base64 chunk of an uploaded video or image",
+      "type": "object",
+      "properties": {
+        "mediaId": { "type": "string", "maxLength": 128 },
+        "index": { "type": "number" },
+        "data": { "type": "string" }
+      },
+      "required": ["mediaId", "index", "data"]
+    },
+    "admin_activity": {
+      "title": "Admin Activity Log",
+      "description": "Audit log of admin changes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "adminEmail": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "action", "createdAt"]
+    },
+    "contact_submission": {
+      "title": "Contact Us Submission",
+      "description": "Customer inquiry submitted via Contact Us form",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 160 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "comment": { "type": "string", "maxLength": 4096 },
+        "source": { "type": "string", "maxLength": 64 },
+        "status": { "type": "string", "enum": ["new", "read", "resolved"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "email", "createdAt"]
+    },
+    "email_subscriber": {
+      "title": "Email Subscriber",
+      "description": "Customer email subscribed via footer or newsletter input",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 160 },
+        "source": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "email", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": "product",
+      "description": "FitYatra supplement product catalog and dynamic page configs"
+    },
+    "/orders/{orderId}": {
+      "schema": "order",
+      "description": "Direct customer orders in Nepal"
+    },
+    "/reviews/{reviewId}": {
+      "schema": "review",
+      "description": "Customer reviews and testimonials"
+    },
+    "/payment_settings/{paymentId}": {
+      "schema": "payment_setting",
+      "description": "Checkout payment methods and QR codes"
+    },
+    "/banners/{bannerId}": {
+      "schema": "banner",
+      "description": "Promotional banners"
+    },
+    "/store_settings/{settingId}": {
+      "schema": "store_setting",
+      "description": "Global store settings"
+    },
+    "/admin_activity/{activityId}": {
+      "schema": "admin_activity",
+      "description": "Admin audit trail"
+    },
+    "/contact_submissions/{submissionId}": {
+      "schema": "contact_submission",
+      "description": "Contact Us form inquiries from customers"
+    },
+    "/email_subscribers/{subscriberId}": {
+      "schema": "email_subscriber",
+      "description": "Customer email/Gmail newsletter subscribers"
+    },
+    "/media_files/{mediaId}": {
+      "schema": "media_file",
+      "description": "Metadata for uploaded videos and images"
+    },
+    "/media_chunks/{chunkId}": {
+      "schema": "media_chunk",
+      "description": "Base64 chunks for uploaded videos and images"
+    }
+  }
+}

@@ -1,0 +1,151 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default-Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.email == 'young829229@gmail.com' && request.auth.token.email_verified == true) ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Product validation blueprint
+    function isValidProduct(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 256 &&
+             data.brand is string && data.brand.size() <= 128 &&
+             data.category is string && data.category.size() <= 128 &&
+             data.price is number && data.price >= 0 &&
+             data.originalPrice is number && data.originalPrice >= 0;
+    }
+
+    // Order validation blueprint
+    function isValidOrder(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.customerName is string && data.customerName.size() >= 2 && data.customerName.size() <= 128 &&
+             data.phone is string && data.phone.size() >= 7 && data.phone.size() <= 25 &&
+             data.address is string && data.address.size() >= 3 && data.address.size() <= 300 &&
+             data.totalAmount is number && data.totalAmount >= 0 &&
+             data.status in ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'];
+    }
+
+    // Review validation blueprint
+    function isValidReview(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 128 &&
+             data.rating is number && data.rating >= 1 && data.rating <= 5 &&
+             data.comment is string && data.comment.size() > 0 && data.comment.size() <= 4096;
+    }
+
+    // Contact Submission validation blueprint
+    function isValidContactSubmission(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.email is string && data.email.size() > 0 && data.email.size() <= 160;
+    }
+
+    // Email Subscriber validation blueprint
+    function isValidEmailSubscriber(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.email is string && data.email.size() > 0 && data.email.size() <= 160;
+    }
+
+    // 1. Products Collection
+    match /products/{productId} {
+      allow get, list: if true;
+      allow create, update: if isValidId(productId) && isValidProduct(incoming());
+      allow delete: if isValidId(productId);
+    }
+
+    // 2. Orders Collection
+    match /orders/{orderId} {
+      allow get, list: if true;
+      allow create: if isValidId(orderId) && isValidOrder(incoming());
+      allow update, delete: if isValidId(orderId);
+    }
+
+    // 3. Customer Reviews Collection
+    match /reviews/{reviewId} {
+      allow get, list: if true;
+      allow create: if isValidId(reviewId) && isValidReview(incoming());
+      allow update, delete: if isValidId(reviewId);
+    }
+
+    // 4. Payment Settings Collection
+    match /payment_settings/{paymentId} {
+      allow get, list: if true;
+      allow create, update, delete: if isValidId(paymentId);
+    }
+
+    // 5. Promotional Banners Collection
+    match /banners/{bannerId} {
+      allow get, list: if true;
+      allow create, update, delete: if isValidId(bannerId);
+    }
+
+    // 6. Store Settings Collection (open for order, announcement, etc)
+    match /store_settings/{settingId} {
+      allow get, list: if true;
+      allow create, update, delete: if isValidId(settingId);
+    }
+
+    // 7. Admin Activity Log Collection
+    match /admin_activity/{activityId} {
+      allow get, list: if true;
+      allow create, update, delete: if isValidId(activityId);
+    }
+
+    // 8. Contact Submissions Collection
+    match /contact_submissions/{submissionId} {
+      allow get, list: if true;
+      allow create: if isValidId(submissionId) && isValidContactSubmission(incoming());
+      allow update, delete: if isValidId(submissionId);
+    }
+
+    // 9. Email Subscribers Collection
+    match /email_subscribers/{subscriberId} {
+      allow get, list: if true;
+      allow create: if isValidId(subscriberId) && isValidEmailSubscriber(incoming());
+      allow update, delete: if isValidId(subscriberId);
+    }
+
+    // 10. Uploaded Media Files & Chunks (Videos & Images)
+    match /media_files/{mediaId} {
+      allow get, list: if true;
+      allow create, update, delete: if isValidId(mediaId);
+    }
+
+    match /media_chunks/{chunkId} {
+      allow get, list: if true;
+      allow create, update, delete: if isValidId(chunkId);
+    }
+
+    // 11. Admin Users Collection
+    match /admins/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // 11. Test Collection (for connectivity check)
+    match /test/{testId} {
+      allow get: if true;
+    }
+  }
+}

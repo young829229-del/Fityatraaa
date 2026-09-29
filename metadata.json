@@ -1,0 +1,6 @@
+{
+  "name": "Remix: FitYatra Supplement Store",
+  "description": "FitYatra: Replicate and elevate the premium fitness supplementation store in Nepal. Features a highly refined catalog, goal-based wellness filters, dynamic shipping rates, coupon discounts, and an interactive personalized supplementation advisor.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
