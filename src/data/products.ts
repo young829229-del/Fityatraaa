@@ -646,20 +646,21 @@ export const PRODUCTS: Product[] = [
 export function enrichProductWithDefaults(product: Product): Product {
   const baseline = PRODUCTS.find((p) => p.id === product.id);
 
-  const promotionalBanner: PromotionalBannerConfig = product.promotionalBanner
-    ? {
+  // Upgrade legacy promo banner if it still had old placeholder heading or broken image
+  const hasLegacyPromo =
+    !product.promotionalBanner ||
+    product.promotionalBanner.heading === 'BUILD MUSCLE FASTER WITH VERIFIED NUTRITION' ||
+    (product.promotionalBanner.image && product.promotionalBanner.image.startsWith('/src/assets/'));
+
+  const promotionalBanner: PromotionalBannerConfig = hasLegacyPromo
+    ? baseline?.promotionalBanner || DEFAULT_PROMO_BANNER
+    : {
         ...DEFAULT_PROMO_BANNER,
         ...(baseline?.promotionalBanner || {}),
         ...product.promotionalBanner,
-        heading:
-          product.promotionalBanner.heading === 'BUILD MUSCLE FASTER WITH VERIFIED NUTRITION' &&
-          baseline?.promotionalBanner?.heading
-            ? baseline.promotionalBanner.heading
-            : product.promotionalBanner.heading ||
-              baseline?.promotionalBanner?.heading ||
-              DEFAULT_PROMO_BANNER.heading
-      }
-    : baseline?.promotionalBanner || DEFAULT_PROMO_BANNER;
+        bgColor: '#070d19',
+        textColor: '#FFFFFF'
+      };
 
   const activeGallery =
     product.gallery && product.gallery.length > 0

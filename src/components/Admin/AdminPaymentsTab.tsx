@@ -1,277 +1,311 @@
-import { useState, useEffect } from 'react';
-import { CreditCard, QrCode, Plus, Save, Trash2, Check, AlertCircle } from 'lucide-react';
+import { useState, ChangeEvent } from 'react';
+import { CreditCard, Box, Check, QrCode, Upload, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { PaymentMethodSetting } from '../../types';
-import ImageUploader from './ImageUploader';
+import { uploadFileToStorage, useResolvedMediaUrl } from '../../services/storageService';
 
 interface AdminPaymentsTabProps {
-  paymentSettings: PaymentMethodSetting[];
-  onSaveSetting: (setting: PaymentMethodSetting) => Promise<void>;
-  onDeleteSetting: (id: string) => Promise<void>;
+  paymentMethods: PaymentMethodSetting[];
+  onSavePaymentMethod: (setting: PaymentMethodSetting) => Promise<void>;
+  onDeletePaymentMethod: (id: string) => Promise<void>;
+  onAddPaymentMethod: (setting: PaymentMethodSetting) => Promise<void>;
+}
+
+interface MethodMeta {
+  id: string;
+  code: 'esewa' | 'bank' | 'cod';
+  title: string;
+  description: string;
+  uploadLabel: string;
+  displayOrder: number;
+}
+
+const METHOD_DEFINITIONS: MethodMeta[] = [
+  {
+    id: 'esewa',
+    code: 'esewa',
+    title: 'eSewa',
+    description: 'Digital wallet payment via eSewa ID or QR.',
+    uploadLabel: 'Upload eSewa QR',
+    displayOrder: 1
+  },
+  {
+    id: 'bank',
+    code: 'bank',
+    title: 'Bank Transfer',
+    description: 'Direct bank deposit / Fonepay account transfer.',
+    uploadLabel: 'Upload Bank Transfer QR',
+    displayOrder: 2
+  },
+  {
+    id: 'cod',
+    code: 'cod',
+    title: 'Cash on Delivery (COD)',
+    description: 'Pay with physical cash upon package doorstep delivery.',
+    uploadLabel: 'Upload Cash on Delivery (COD) QR',
+    displayOrder: 3
+  }
+];
+
+function QrPreviewThumb({ src, alt }: { src?: string; alt: string }) {
+  const resolved = useResolvedMediaUrl(src || '');
+  if (!src || !resolved) {
+    return (
+      <div className="flex flex-col items-center justify-center text-[#B8B8BE]">
+        <ImageIcon className="w-6 h-6 stroke-[1.5]" />
+        <span className="text-[10px] font-medium mt-1">No QR</span>
+      </div>
+    );
+  }
+  return (
+    <img
+      src={resolved}
+      alt={alt}
+      referrerPolicy="no-referrer"
+      className="w-full h-full object-contain p-1.5 bg-white"
+    />
+  );
 }
 
 export default function AdminPaymentsTab({
-  paymentSettings = [],
-  onSaveSetting,
-  onDeleteSetting
+  paymentMethods,
+  onSavePaymentMethod
 }: AdminPaymentsTabProps) {
-  const [editingSettings, setEditingSettings] = useState<PaymentMethodSetting[]>(paymentSettings);
-  const [savedSuccessId, setSavedSuccessId] = useState<string | null>(null);
-  const [savingId, setSavingId] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [uploadingCode, setUploadingCode] = useState<string | null>(null);
 
-  useEffect(() => {
-    setEditingSettings(paymentSettings);
-  }, [paymentSettings]);
+  // Merge live Firestore methods with the 3 canonical definitions in exact order
+  const resolvedMethods: { meta: MethodMeta; record: PaymentMethodSetting }[] =
+    METHOD_DEFINITIONS.map((meta) => {
+      const existing = paymentMethods.find(
+        (m) => m.id === meta.id || m.code.toLowerCase() === meta.code
+      );
+      const record: PaymentMethodSetting = existing
+        ? {
+            ...existing,
+            name: meta.title,
+            code: meta.code,
+            displayOrder: meta.displayOrder,
+            qrEnabled: existing.qrEnabled ?? Boolean(existing.qrImageUrl)
+          }
+        : {
+            id: meta.id,
+            code: meta.code,
+            name: meta.title,
+            enabled: true,
+            qrEnabled: false,
+            qrImageUrl: '',
+            instructions: meta.description,
+            displayOrder: meta.displayOrder,
+            requiresScreenshot: false
+          };
+      return { meta, record };
+    });
 
-  const handleUpdateField = (id: string, field: keyof PaymentMethodSetting, value: any) => {
-    setEditingSettings((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, [field]: value } : item))
-    );
+  const activeCount = resolvedMethods.filter((m) => m.record.enabled).length;
+  const screenshotUploadEnabled = resolvedMethods.some((m) => m.record.requiresScreenshot);
+
+  const handleToggleActive = async (record: PaymentMethodSetting) => {
+    const updated: PaymentMethodSetting = {
+      ...record,
+      enabled: !record.enabled
+    };
+    await onSavePaymentMethod(updated);
   };
 
-  const handleSaveItem = async (setting: PaymentMethodSetting) => {
-    setSavingId(setting.id);
-    setSaveError(null);
+  const handleToggleQr = async (record: PaymentMethodSetting) => {
+    const updated: PaymentMethodSetting = {
+      ...record,
+      qrEnabled: !record.qrEnabled
+    };
+    await onSavePaymentMethod(updated);
+  };
+
+  const handleUploadQrFile = async (
+    record: PaymentMethodSetting,
+    e: ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingCode(record.code);
     try {
-      await onSaveSetting(setting);
-      setSavedSuccessId(setting.id);
-      setTimeout(() => setSavedSuccessId((curr) => (curr === setting.id ? null : curr)), 2500);
-    } catch (err: any) {
-      console.error('Failed to save payment setting to Firebase:', err);
-      setSaveError('Failed to save changes. Please try again.');
+      const res = await uploadFileToStorage(file, `payment-qrs/${record.code}`);
+      if (res.url) {
+        await onSavePaymentMethod({
+          ...record,
+          qrImageUrl: res.url,
+          qrEnabled: true
+        });
+      }
+    } catch (err) {
+      console.error('Failed to upload QR image:', err);
     } finally {
-      setSavingId(null);
+      setUploadingCode(null);
+      e.target.value = '';
     }
   };
 
-  const handleAddNewMethod = () => {
-    const newMethod: PaymentMethodSetting = {
-      id: `method-${Date.now()}`,
-      code: `custom-${Date.now()}`,
-      name: 'Khalti / Fonepay Direct',
-      enabled: true,
-      accountName: 'FitYatra Supplement Nepal',
-      accountNumber: '9800000000',
-      qrImageUrl: '',
-      instructions: 'Scan the payment QR code and upload screenshot during checkout.',
-      displayOrder: editingSettings.length + 1,
-      requiresScreenshot: true
-    };
-    setEditingSettings([...editingSettings, newMethod]);
+  const handleToggleScreenshotUpload = async () => {
+    const nextValue = !screenshotUploadEnabled;
+    for (const { record } of resolvedMethods) {
+      await onSavePaymentMethod({
+        ...record,
+        requiresScreenshot: nextValue
+      });
+    }
   };
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="bg-white rounded-2xl border border-neutral-200/90 shadow-xs p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <h2 className="text-xl sm:text-2xl font-black text-neutral-900 tracking-tight">
-          Payment & QRs
-        </h2>
-
-        <button
-          type="button"
-          onClick={handleAddNewMethod}
-          className="bg-neutral-950 hover:bg-neutral-800 text-white font-black text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs"
-        >
-          <Plus className="w-4 h-4 text-[#FFCD00]" />
-          <span>+ Add Payment Method</span>
-        </button>
+    <div className="bg-[#FAF9F7] text-[#18181B] rounded-3xl p-5 sm:p-8 max-w-4xl mx-auto">
+      {/* Top Heading */}
+      <div className="mb-6">
+        <div className="flex items-center gap-2.5">
+          <CreditCard className="w-6 h-6 text-[#D94E5A] stroke-[2.2] shrink-0" />
+          <h2 className="text-[22px] sm:text-[26px] font-black tracking-tight text-[#18181B]">
+            Payment Settings
+          </h2>
+        </div>
+        <p className="text-[13px] text-[#6E6E73] mt-1">
+          Manage checkout payment methods, separate QR codes, and customer payment verification uploads.
+        </p>
       </div>
 
-      {saveError && (
-        <div className="bg-red-50 border border-red-300 text-red-800 px-4 py-3 rounded-xl text-xs font-bold flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-          <span>{saveError}</span>
+      {/* Section Subheader */}
+      <div className="flex items-center justify-between mb-4 px-0.5">
+        <div className="flex items-center gap-2">
+          <Box className="w-4 h-4 text-[#52525B] stroke-[2]" />
+          <span className="text-[12px] font-black uppercase tracking-wider text-[#18181B]">
+            PAYMENT METHODS &amp; QR CODES
+          </span>
         </div>
-      )}
+        <span className="text-[12px] font-mono text-[#8E8E93]">
+          {activeCount} active at checkout
+        </span>
+      </div>
 
-      {/* Payment Methods Cards Grid */}
+      {/* 3 Payment Method Cards */}
       <div className="space-y-4">
-        {editingSettings.map((method) => {
-          const isSaved = savedSuccessId === method.id;
-          const isSavingThis = savingId === method.id;
+        {resolvedMethods.map(({ meta, record }) => {
+          const isQrOn = Boolean(record.qrEnabled);
+          const isUploading = uploadingCode === record.code;
 
           return (
             <div
-              key={method.id}
-              className={`p-5 rounded-2xl border transition-all bg-white shadow-xs ${
-                method.enabled ? 'border-neutral-200/90' : 'border-neutral-200 opacity-60 bg-neutral-50'
-              }`}
+              key={meta.id}
+              className="bg-white border border-[#ECECEA] rounded-[24px] p-5 sm:p-6 shadow-[0_2px_10px_rgba(0,0,0,0.02)]"
             >
-              {/* Header with Switch */}
-              <div className="flex items-center justify-between border-b border-neutral-100 pb-3 mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-neutral-100 flex items-center justify-center font-bold text-neutral-800">
-                    <CreditCard className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-black text-neutral-900">{method.name}</h3>
-                    <span className="text-[10px] font-mono text-neutral-400 uppercase">
-                      Code: {method.code} • Order #{method.displayOrder}
-                    </span>
+              {/* Top Row: Checkbox + Title/Badge/Desc + QR Toggle */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3.5 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleActive(record)}
+                    className={`w-7 h-7 rounded-[9px] flex items-center justify-center mt-0.5 shrink-0 transition-all cursor-pointer ${
+                      record.enabled
+                        ? 'bg-[#FF3B4E] text-white shadow-[0_2px_8px_rgba(255,59,78,0.35)]'
+                        : 'bg-[#F4F4F5] border border-[#D4D4D8] text-transparent'
+                    }`}
+                    aria-label={`Toggle ${meta.title}`}
+                  >
+                    <Check className="w-4 h-4 stroke-[3]" />
+                  </button>
+
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <h3 className="text-[15px] font-extrabold text-[#18181B]">
+                        {meta.title}
+                      </h3>
+                      {record.enabled && (
+                        <span className="bg-[#DDF7EE] text-[#0E7A57] text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full">
+                          ACTIVE AT CHECKOUT
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[13px] text-[#6E6E73] mt-0.5">{meta.description}</p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-bold uppercase text-neutral-600">
-                    {method.enabled ? 'Enabled' : 'Disabled'}
+                {/* Right QR: OFF/ON Toggle Pill */}
+                <div className="bg-[#F7F7F5] border border-[#EFEFEB] rounded-full pl-3 pr-1.5 py-1.5 flex items-center gap-2 shrink-0">
+                  <QrCode className="w-3.5 h-3.5 text-[#52525B]" />
+                  <span className="text-[11px] font-bold text-[#3F3F46] whitespace-nowrap">
+                    QR:{' '}
+                    <span className="font-semibold text-[#71717A]">
+                      {isQrOn ? 'ON' : 'OFF'}
+                    </span>
                   </span>
                   <button
                     type="button"
-                    onClick={() => handleUpdateField(method.id, 'enabled', !method.enabled)}
-                    className={`w-10 h-6 rounded-full p-0.5 transition-colors cursor-pointer ${
-                      method.enabled ? 'bg-emerald-500' : 'bg-neutral-300'
+                    onClick={() => handleToggleQr(record)}
+                    className={`w-10 h-5.5 rounded-full p-0.5 transition-colors flex items-center cursor-pointer ${
+                      isQrOn ? 'bg-[#18181B] justify-end' : 'bg-[#D4D4D8] justify-start'
                     }`}
+                    aria-label={`Toggle ${meta.title} QR`}
                   >
-                    <div
-                      className={`w-5 h-5 bg-white rounded-full transition-transform ${
-                        method.enabled ? 'translate-x-4' : 'translate-x-0'
-                      }`}
-                    />
+                    <span className="w-4.5 h-4.5 rounded-full bg-white shadow-xs block" />
                   </button>
                 </div>
               </div>
 
-              {/* Form Fields */}
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
-                {/* Left: Account details & Instructions */}
-                <div className="md:col-span-7 space-y-3">
-                  <div>
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-neutral-700 block mb-1">
-                      Payment Method Name
-                    </label>
-                    <input
-                      type="text"
-                      value={method.name}
-                      onChange={(e) => handleUpdateField(method.id, 'name', e.target.value)}
-                      className="w-full text-xs font-bold p-2.5 bg-neutral-50 border border-neutral-300 rounded-lg focus:outline-none focus:border-neutral-900"
-                    />
-                  </div>
-
-                  {method.code !== 'cod' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-[11px] font-bold uppercase tracking-wider text-neutral-700 block mb-1">
-                          Account / Receiver Name
-                        </label>
-                        <input
-                          type="text"
-                          value={method.accountName || ''}
-                          onChange={(e) => handleUpdateField(method.id, 'accountName', e.target.value)}
-                          placeholder="e.g. FitYatra Nutrition Nepal"
-                          className="w-full text-xs p-2.5 bg-neutral-50 border border-neutral-300 rounded-lg focus:outline-none focus:border-neutral-900"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-[11px] font-bold uppercase tracking-wider text-neutral-700 block mb-1">
-                          Account / Mobile Number
-                        </label>
-                        <input
-                          type="text"
-                          value={method.accountNumber || ''}
-                          onChange={(e) =>
-                            handleUpdateField(method.id, 'accountNumber', e.target.value)
-                          }
-                          placeholder="e.g. 9800000000 or Account No."
-                          className="w-full text-xs font-mono p-2.5 bg-neutral-50 border border-neutral-300 rounded-lg focus:outline-none focus:border-neutral-900"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-neutral-700 block mb-1">
-                      Payment Instructions shown at Checkout
-                    </label>
-                    <textarea
-                      value={method.instructions || ''}
-                      onChange={(e) => handleUpdateField(method.id, 'instructions', e.target.value)}
-                      rows={2}
-                      placeholder="Instructions for customer payment & screenshot upload..."
-                      className="w-full text-xs p-2.5 bg-neutral-50 border border-neutral-300 rounded-lg focus:outline-none focus:border-neutral-900"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-1">
-                    <input
-                      type="checkbox"
-                      id={`req-scr-${method.id}`}
-                      checked={method.requiresScreenshot ?? false}
-                      onChange={(e) =>
-                        handleUpdateField(method.id, 'requiresScreenshot', e.target.checked)
-                      }
-                      className="w-4 h-4 cursor-pointer"
-                    />
-                    <label
-                      htmlFor={`req-scr-${method.id}`}
-                      className="text-xs font-semibold text-neutral-800 cursor-pointer"
-                    >
-                      Require customer payment screenshot upload at checkout
-                    </label>
-                  </div>
+              {/* Bottom Row: QR Box + Upload Button */}
+              <div className="mt-5 flex items-center gap-4">
+                <div className="w-24 h-24 rounded-[18px] bg-[#F5F5F3] border border-[#EAEAE6] flex items-center justify-center overflow-hidden shrink-0">
+                  <QrPreviewThumb src={record.qrImageUrl} alt={`${meta.title} QR`} />
                 </div>
 
-                {/* Right: Direct File Upload QR Code */}
-                <div className="md:col-span-5 bg-neutral-50 p-4 rounded-xl border border-neutral-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold uppercase tracking-wider text-neutral-800 flex items-center gap-1.5">
-                      <QrCode className="w-4 h-4 text-neutral-600" />
-                      <span>Payment QR Code</span>
-                    </span>
-                    <span className="text-[10px] text-neutral-400">Direct File Upload</span>
-                  </div>
-
-                  {method.code === 'cod' ? (
-                    <div className="p-6 text-center text-xs text-neutral-400 italic">
-                      Cash on Delivery does not require a QR code image.
-                    </div>
+                <label className="bg-[#1C1B1A] hover:bg-black text-white rounded-full px-5 py-2.5 inline-flex items-center gap-2 text-[12px] font-bold shadow-xs cursor-pointer transition-colors">
+                  {isUploading ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
                   ) : (
-                    <ImageUploader
-                      label=""
-                      folder="payments"
-                      images={method.qrImageUrl ? [method.qrImageUrl] : []}
-                      onChange={(newImgs) => {
-                        handleUpdateField(method.id, 'qrImageUrl', newImgs[0] || '');
-                      }}
-                      multiple={false}
-                      maxFiles={1}
-                      aspectRatio="square"
-                    />
+                    <Upload className="w-3.5 h-3.5 text-white stroke-[2.2]" />
                   )}
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center justify-end pt-4 mt-4 border-t border-neutral-100">
-                <div className="flex items-center gap-2">
-                  {method.id.startsWith('method-') && (
-                    <button
-                      type="button"
-                      onClick={() => onDeleteSetting(method.id)}
-                      className="px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded-lg cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => handleSaveItem(method)}
-                    className={`px-4 py-2 text-xs font-black uppercase rounded-lg transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ${
-                      isSaved
-                        ? 'bg-emerald-500 text-white'
-                        : 'bg-neutral-950 hover:bg-neutral-800 text-white'
-                    }`}
-                  >
-                    {isSaved ? <Check className="w-3.5 h-3.5 stroke-[3]" /> : <Save className="w-3.5 h-3.5" />}
-                    <span>{isSaved ? 'Published!' : 'Save Method'}</span>
-                  </button>
-                </div>
+                  <span>{isUploading ? 'Uploading...' : meta.uploadLabel}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handleUploadQrFile(record, e)}
+                  />
+                </label>
               </div>
             </div>
           );
         })}
+      </div>
+
+      {/* Bottom Payment Screenshot Upload Card */}
+      <div className="mt-5 bg-white border border-[#ECECEA] rounded-[24px] p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-[0_2px_10px_rgba(0,0,0,0.02)]">
+        <div>
+          <div className="flex items-center gap-2">
+            <Upload className="w-4 h-4 text-[#18181B] stroke-[2.2]" />
+            <h4 className="text-[13px] font-black uppercase tracking-wider text-[#18181B]">
+              PAYMENT SCREENSHOT UPLOAD
+            </h4>
+          </div>
+          <p className="text-[12px] text-[#6E6E73] mt-1">
+            Allow customers to attach payment confirmation slips during checkout.
+          </p>
+        </div>
+
+        <div className="bg-[#F7F7F5] border border-[#EFEFEB] rounded-full pl-3.5 pr-1.5 py-1.5 flex items-center gap-2.5 self-start sm:self-auto shrink-0">
+          <span className="text-[11px] font-bold text-[#3F3F46] whitespace-nowrap">
+            Screenshot Upload:{' '}
+            <span className="font-semibold text-[#71717A]">
+              {screenshotUploadEnabled ? 'ON' : 'OFF'}
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={handleToggleScreenshotUpload}
+            className={`w-10 h-5.5 rounded-full p-0.5 transition-colors flex items-center cursor-pointer ${
+              screenshotUploadEnabled
+                ? 'bg-[#18181B] justify-end'
+                : 'bg-[#D4D4D8] justify-start'
+            }`}
+            aria-label="Toggle Screenshot Upload"
+          >
+            <span className="w-4.5 h-4.5 rounded-full bg-white shadow-xs block" />
+          </button>
+        </div>
       </div>
     </div>
   );

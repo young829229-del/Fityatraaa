@@ -298,10 +298,27 @@ export default function ProductPageBuilder({
     }));
   };
 
-  const handleSave = () => {
-    onSaveProduct({ ...draft, pageSections: sections });
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 2500);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      await onSaveProduct({ ...draft, pageSections: sections });
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
+    } catch (err: any) {
+      console.error('Failed to save Product Page Builder changes:', err);
+      let msg = err?.message || 'Failed to save changes. Please try again.';
+      try {
+        const parsed = JSON.parse(msg);
+        if (parsed?.error) msg = `Failed to save changes: ${parsed.error}`;
+      } catch {}
+      setSaveError(msg);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const scoopConfig = draft.scoopSection || DEFAULT_SCOOP_SECTION;
@@ -325,8 +342,8 @@ export default function ProductPageBuilder({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => {
-                onSaveProduct({ ...draft, pageSections: sections });
+              onClick={async () => {
+                await handleSave();
                 onTogglePreview();
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold uppercase tracking-wider bg-neutral-800 hover:bg-neutral-700 text-white border border-neutral-700 rounded-lg transition-colors cursor-pointer"
@@ -338,12 +355,13 @@ export default function ProductPageBuilder({
             <button
               type="button"
               onClick={handleSave}
-              className={`flex items-center gap-1.5 px-4 py-1.5 text-xs font-black uppercase tracking-wider text-black rounded-lg transition-all cursor-pointer ${
+              disabled={isSaving}
+              className={`flex items-center gap-1.5 px-4 py-1.5 text-xs font-black uppercase tracking-wider text-black rounded-lg transition-all cursor-pointer disabled:opacity-60 ${
                 saveSuccess ? 'bg-emerald-400' : 'bg-[#FFCD00] hover:bg-amber-400'
               }`}
             >
               {saveSuccess ? <Check className="w-4 h-4 stroke-[3]" /> : <Save className="w-4 h-4" />}
-              <span>{saveSuccess ? 'Saved to Firebase!' : 'Save Changes'}</span>
+              <span>{isSaving ? 'Saving...' : saveSuccess ? 'Saved to Firebase!' : 'Save Changes'}</span>
             </button>
 
             <button
@@ -356,6 +374,19 @@ export default function ProductPageBuilder({
             </button>
           </div>
         </div>
+
+        {saveError && (
+          <div className="bg-red-600 text-white px-4 py-2 text-xs font-bold flex items-center justify-between">
+            <span>{saveError}</span>
+            <button
+              type="button"
+              onClick={() => setSaveError(null)}
+              className="underline ml-4 cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
         {/* Builder Navigation Tabs */}
         <div className="flex items-center border-b border-neutral-200 bg-neutral-100 overflow-x-auto text-xs font-bold uppercase tracking-wider text-neutral-600 no-scrollbar">
@@ -1604,9 +1635,10 @@ export default function ProductPageBuilder({
             <button
               type="button"
               onClick={handleSave}
-              className="px-4 py-1.5 bg-neutral-950 hover:bg-neutral-800 text-white font-bold uppercase tracking-wider rounded-lg cursor-pointer"
+              disabled={isSaving}
+              className="px-4 py-1.5 bg-neutral-950 hover:bg-neutral-800 disabled:opacity-60 text-white font-bold uppercase tracking-wider rounded-lg cursor-pointer"
             >
-              Save Changes
+              {isSaving ? 'Saving...' : saveSuccess ? 'Saved to Firebase!' : 'Save Changes'}
             </button>
           </div>
         </div>

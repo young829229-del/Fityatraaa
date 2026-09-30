@@ -84,11 +84,7 @@ export function subscribeToProducts(callback: (products: Product[]) => void): ()
       (snapshot) => {
         if (snapshot.empty && !hasSeededProducts) {
           hasSeededProducts = true;
-          if (isAuthorizedAdminUser(auth.currentUser)) {
-            seedInitialProductsIfEmpty().then(callback);
-          } else {
-            callback(INITIAL_PRODUCTS.map((p) => enrichProductWithDefaults(p)));
-          }
+          seedInitialProductsIfEmpty().then(callback);
         } else {
           const products = snapshot.docs.map((docSnap) => {
             const raw = docSnap.data() as Product;
@@ -97,7 +93,13 @@ export function subscribeToProducts(callback: (products: Product[]) => void): ()
               id: docSnap.id
             });
           });
-          callback(products);
+          // Ensure all baseline products were seeded if an earlier partial seed occurred
+          if (!hasSeededProducts && products.length < INITIAL_PRODUCTS.length) {
+            hasSeededProducts = true;
+            ensureAllBaselineProductsSeeded(products).then(callback);
+          } else {
+            callback(products);
+          }
         }
       },
       (error) => {
@@ -107,6 +109,51 @@ export function subscribeToProducts(callback: (products: Product[]) => void): ()
   } catch (err) {
     console.warn('subscribeToProducts caught error:', err);
     return () => {};
+  }
+}
+
+async function ensureAllBaselineProductsSeeded(existingProducts: Product[]): Promise<Product[]> {
+  try {
+    const settingsRef = doc(db, STORE_SETTINGS_COLLECTION, 'general');
+    const settingsSnap = await getDoc(settingsRef);
+    const settingsData = settingsSnap.exists() ? (settingsSnap.data() as Record<string, any>) : {};
+    const deletedIds: string[] = Array.isArray(settingsData.deletedProductIds)
+      ? settingsData.deletedProductIds
+      : [];
+
+    if (settingsData.catalogSeededV2) {
+      return existingProducts;
+    }
+
+    const existingIds = new Set(existingProducts.map((p) => p.id));
+    const merged = [...existingProducts];
+
+    for (const prod of INITIAL_PRODUCTS) {
+      if (!existingIds.has(prod.id) && !deletedIds.includes(prod.id)) {
+        const enriched: Product = enrichProductWithDefaults({
+          ...prod,
+          stock: prod.isSoldOut ? 0 : prod.stock ?? 50,
+          soldCount: 0,
+          sku: `FY-${prod.id.toUpperCase().slice(0, 8)}`,
+          isActive: true,
+          isFeatured: true,
+          isBestSeller: prod.id === 'wellcore-creatine' || prod.id === 'mb-biozyme-whey'
+        });
+        const payload = stripUndefinedDeep({
+          ...enriched,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        await setDoc(doc(db, PRODUCTS_COLLECTION, prod.id), payload, { merge: true });
+        merged.push(enriched);
+      }
+    }
+
+    await setDoc(settingsRef, { id: 'general', catalogSeededV2: true }, { merge: true });
+    return merged;
+  } catch (err) {
+    console.warn('ensureAllBaselineProductsSeeded notice:', err);
+    return existingProducts;
   }
 }
 
@@ -135,28 +182,39 @@ export async function seedInitialProductsIfEmpty(): Promise<Product[]> {
     if (existing.empty && INITIAL_PRODUCTS.length > 0) {
       const seeded: Product[] = [];
       for (const prod of INITIAL_PRODUCTS) {
-        const enriched: Product = {
+        const enriched: Product = enrichProductWithDefaults({
           ...prod,
-          stock: prod.isSoldOut ? 0 : 50,
+          stock: prod.isSoldOut ? 0 : prod.stock ?? 50,
           soldCount: 0,
           sku: `FY-${prod.id.toUpperCase().slice(0, 8)}`,
           isActive: true,
           isFeatured: true,
           isBestSeller: prod.id === 'wellcore-creatine' || prod.id === 'mb-biozyme-whey'
-        };
-        await setDoc(doc(db, PRODUCTS_COLLECTION, prod.id), {
+        });
+        const payload = stripUndefinedDeep({
           ...enriched,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         });
+        await setDoc(doc(db, PRODUCTS_COLLECTION, prod.id), payload, { merge: true });
         seeded.push(enriched);
       }
+      await setDoc(
+        doc(db, STORE_SETTINGS_COLLECTION, 'general'),
+        { id: 'general', catalogSeededV2: true },
+        { merge: true }
+      );
       return seeded;
     }
-    return existing.docs.map((d) => d.data() as Product);
+    return existing.docs.map((d) =>
+      enrichProductWithDefaults({
+        ...(d.data() as Product),
+        id: d.id
+      })
+    );
   } catch (err) {
     console.warn('Seed initial products notice:', err);
-    return INITIAL_PRODUCTS;
+    return INITIAL_PRODUCTS.map((p) => enrichProductWithDefaults(p));
   }
 }
 
@@ -170,8 +228,8 @@ export async function saveProductToFirestore(product: Product): Promise<void> {
     const cleanPrice = Math.max(0, Number(product.price) || 0);
     const cleanOrigPrice = Math.max(0, Number(product.originalPrice ?? cleanPrice) || cleanPrice);
     const rawStock = typeof product.stock === 'number' && !Number.isNaN(product.stock) ? product.stock : 50;
-    const isSoldOutVal = Boolean(product.isSoldOut) || rawStock <= 0;
-    const stockVal = isSoldOutVal ? 0 : Math.max(1, rawStock);
+    const isSoldOutVal = Boolean(product.isSoldOut);
+    const stockVal = isSoldOutVal ? 0 : rawStock > 0 ? rawStock : 50;
     const discountPct =
       cleanOrigPrice > cleanPrice
         ? Math.round(((cleanOrigPrice - cleanPrice) / cleanOrigPrice) * 100)
@@ -207,6 +265,23 @@ export async function deleteProductFromFirestore(productId: string): Promise<voi
   const path = `${PRODUCTS_COLLECTION}/${productId}`;
   try {
     await deleteDoc(doc(db, PRODUCTS_COLLECTION, productId));
+    try {
+      const settingsRef = doc(db, STORE_SETTINGS_COLLECTION, 'general');
+      const snap = await getDoc(settingsRef);
+      const existingDeleted: string[] =
+        snap.exists() && Array.isArray(snap.data()?.deletedProductIds)
+          ? snap.data().deletedProductIds
+          : [];
+      if (!existingDeleted.includes(productId)) {
+        await setDoc(
+          settingsRef,
+          { id: 'general', deletedProductIds: [...existingDeleted, productId] },
+          { merge: true }
+        );
+      }
+    } catch (e) {
+      console.warn('Could not record deletedProductId:', e);
+    }
     await logAdminActivity('Product Deleted', `Removed product ID: ${productId}`);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
@@ -242,7 +317,7 @@ export function subscribeToOrders(callback: (orders: Order[]) => void): () => vo
 export async function saveOrderToFirestore(orderData: Partial<Order> & { id: string }): Promise<string> {
   const path = `${ORDERS_COLLECTION}/${orderData.id}`;
   try {
-    const fullOrder: Order = {
+    const fullOrder: Order = stripUndefinedDeep({
       id: orderData.id,
       customerName: orderData.customerName || 'Customer',
       phone: orderData.phone || '',
@@ -250,9 +325,18 @@ export async function saveOrderToFirestore(orderData: Partial<Order> & { id: str
       address: orderData.address || '',
       region: orderData.region || 'KTM_VALLEY',
       landmark: orderData.landmark || '',
-      items: orderData.items || [],
-      totalAmount: orderData.totalAmount || 0,
-      discountAmount: orderData.discountAmount || 0,
+      items: (orderData.items || []).map((item) => ({
+        productId: item.productId || '',
+        productName: item.productName || 'Product',
+        quantity: Number(item.quantity) || 1,
+        price: Number(item.price) || 0,
+        selectedVariant: item.selectedVariant || '',
+        selectedBundle: item.selectedBundle || '',
+        selectedFlavors: item.selectedFlavors || [],
+        image: item.image || ''
+      })),
+      totalAmount: Number(orderData.totalAmount) || 0,
+      discountAmount: Number(orderData.discountAmount) || 0,
       paymentMethod: orderData.paymentMethod || 'cod',
       paymentScreenshotUrl: orderData.paymentScreenshotUrl || '',
       paymentStatus: orderData.paymentStatus || 'pending',
@@ -263,7 +347,7 @@ export async function saveOrderToFirestore(orderData: Partial<Order> & { id: str
       createdAt: orderData.createdAt || new Date().toISOString(),
       userId: auth.currentUser?.uid || null,
       userEmail: auth.currentUser?.email || null
-    };
+    });
 
     await setDoc(doc(db, ORDERS_COLLECTION, orderData.id), fullOrder);
     await logAdminActivity(
@@ -594,47 +678,49 @@ export function subscribeToPaymentSettings(callback: (methods: PaymentMethodSett
 export async function seedBaselinePaymentSettings(): Promise<PaymentMethodSetting[]> {
   const defaults: PaymentMethodSetting[] = [
     {
-      id: 'cod',
-      code: 'cod',
-      name: 'Cash on Delivery (COD)',
+      id: 'esewa',
+      code: 'esewa',
+      name: 'eSewa',
       enabled: true,
-      instructions: 'Pay securely in cash or via mobile scanner upon parcel delivery anywhere in Nepal.',
+      qrEnabled: false,
+      accountName: 'FitYatra Nutrition Nepal',
+      accountNumber: '9705283444',
+      qrImageUrl: '',
+      instructions: 'Digital wallet payment via eSewa ID or QR.',
       displayOrder: 1,
       requiresScreenshot: false
     },
     {
-      id: 'esewa',
-      code: 'esewa',
-      name: 'eSewa Mobile Wallet',
-      enabled: true,
-      accountName: 'FitYatra Nutrition Nepal',
-      accountNumber: '9705283444',
-      qrImageUrl: '',
-      instructions:
-        'Scan the eSewa QR code or transfer directly to the eSewa mobile number. Upload the transaction screenshot below.',
-      displayOrder: 2,
-      requiresScreenshot: true
-    },
-    {
       id: 'bank',
       code: 'bank',
-      name: 'Bank Direct Transfer (Fonepay / IPS)',
+      name: 'Bank Transfer',
       enabled: true,
+      qrEnabled: false,
       accountName: 'FitYatra Supplement Pvt. Ltd.',
       accountNumber: '0120100012345601 (Nabil Bank)',
       qrImageUrl: '',
-      instructions: 'Transfer the exact order amount and upload the payment receipt/screenshot.',
+      instructions: 'Direct bank deposit / Fonepay account transfer.',
+      displayOrder: 2,
+      requiresScreenshot: false
+    },
+    {
+      id: 'cod',
+      code: 'cod',
+      name: 'Cash on Delivery (COD)',
+      enabled: true,
+      qrEnabled: false,
+      accountName: 'Pay upon delivery',
+      accountNumber: 'Cash on Delivery',
+      qrImageUrl: '',
+      instructions: 'Pay with physical cash upon package doorstep delivery.',
       displayOrder: 3,
-      requiresScreenshot: true
+      requiresScreenshot: false
     }
   ];
 
-  if (!isAuthorizedAdminUser(auth.currentUser)) {
-    return defaults;
-  }
   try {
     for (const item of defaults) {
-      await setDoc(doc(db, PAYMENT_SETTINGS_COLLECTION, item.id), item);
+      await setDoc(doc(db, PAYMENT_SETTINGS_COLLECTION, item.id), item, { merge: true });
     }
     return defaults;
   } catch (e) {

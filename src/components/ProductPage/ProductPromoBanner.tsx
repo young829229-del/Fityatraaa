@@ -18,11 +18,7 @@ export default function ProductPromoBanner({ config, onShopNow }: ProductPromoBa
 
   return (
     <section
-      className="w-full my-8 sm:my-12 py-10 sm:py-14 px-4 sm:px-6 border-t border-b border-neutral-900"
-      style={{
-        backgroundColor: config.bgColor || '#070d19',
-        color: config.textColor || '#FFFFFF'
-      }}
+      className="w-full my-8 sm:my-12 py-10 sm:py-14 px-4 sm:px-6 border-t border-b border-neutral-900 bg-[#070d19] text-white"
     >
       <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-8 sm:gap-12">
         {/* Left / Center: Editorial Promotional Typography */}

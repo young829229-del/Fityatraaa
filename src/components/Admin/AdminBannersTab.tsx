@@ -1,706 +1,674 @@
-import { useState, useRef, useEffect, ChangeEvent } from 'react';
+import { useState, useEffect, useRef, ChangeEvent } from 'react';
 import {
+  Image as ImageIcon,
   Plus,
   Trash2,
-  Check,
   Save,
-  ArrowUp,
-  ArrowDown,
+  Check,
+  Eye,
+  EyeOff,
   Video,
   Upload,
   Loader2,
-  Film,
-  RefreshCw
+  AlertCircle
 } from 'lucide-react';
 import { StoreBanner, StoreSettings } from '../../types';
 import ImageUploader from './ImageUploader';
-import { uploadFileToStorage, useResolvedMediaUrl } from '../../services/storageService';
+import { uploadFileToStorage } from '../../services/storageService';
 
 interface AdminBannersTabProps {
   banners: StoreBanner[];
-  storeSettings?: StoreSettings;
-  onUpdateStoreSettings?: (updates: Partial<StoreSettings>) => Promise<void>;
   onSaveBanner: (banner: StoreBanner) => Promise<void>;
   onDeleteBanner: (id: string) => Promise<void>;
+  storeSettings?: StoreSettings | null;
+  onUpdateStoreSettings?: (updates: Partial<StoreSettings>) => Promise<void>;
 }
 
-function ResolvedVideoPlayer({
-  videoUrl,
-  posterUrl,
-  className = 'w-full h-full object-cover rounded-lg bg-black'
-}: {
-  videoUrl?: string;
-  posterUrl?: string;
-  className?: string;
-}) {
-  const resolvedVideo = useResolvedMediaUrl(videoUrl);
-  const resolvedPoster = useResolvedMediaUrl(posterUrl);
-  if (!resolvedVideo) return null;
-  return (
-    <video
-      src={resolvedVideo}
-      poster={resolvedPoster || undefined}
-      controls
-      playsInline
-      className={className}
-    />
-  );
-}
+const DEFAULT_REDEFINE_VIDEO =
+  'https://res.cloudinary.com/drefcs4o2/video/upload/v1772786558/AQN7bb300k16e4a823562133089a70f6f743831e4d4d139d09c4409986d60900c7026444233380473110008057761_1_fd9n1h.mp4';
+const DEFAULT_REDEFINE_POSTER =
+  'https://i.ibb.co/SwK21D9p/Screenshot-2026-03-06-14-31-10-49-40deb401b9ffe8e1df2f1cc5ba480b12.jpg';
 
 export default function AdminBannersTab({
-  banners = [],
-  storeSettings,
-  onUpdateStoreSettings,
+  banners,
   onSaveBanner,
-  onDeleteBanner
+  onDeleteBanner,
+  storeSettings,
+  onUpdateStoreSettings
 }: AdminBannersTabProps) {
-  const [editingBanners, setEditingBanners] = useState<StoreBanner[]>(banners);
-  const [savedBannerId, setSavedBannerId] = useState<string | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [uploadingVideoId, setUploadingVideoId] = useState<string | null>(null);
-  const videoInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [localBanners, setLocalBanners] = useState<StoreBanner[]>(banners);
+  const [dirtyBannerIds, setDirtyBannerIds] = useState<Set<string>>(new Set());
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [uploadingBannerVideoId, setUploadingBannerVideoId] = useState<string | null>(null);
+  const [bannerVideoUploadProgress, setBannerVideoUploadProgress] = useState<number>(0);
 
-  // Homepage "Redefine / Modify Yourself" Video & Announcement Bar state synced with Firestore storeSettings
+  // Redefine Yourself Video section state
+  const [redefineHeading, setRedefineHeading] = useState<string>(
+    storeSettings?.redefineVideoHeading || 'Redefine Yourself'
+  );
+  const [redefineVideoUrl, setRedefineVideoUrl] = useState<string>(
+    storeSettings?.redefineVideoUrl || DEFAULT_REDEFINE_VIDEO
+  );
+  const [redefinePosterUrl, setRedefinePosterUrl] = useState<string>(
+    storeSettings?.redefineVideoPosterUrl || DEFAULT_REDEFINE_POSTER
+  );
+  const [redefineEnabled, setRedefineEnabled] = useState<boolean>(
+    storeSettings?.redefineVideoEnabled ?? true
+  );
   const [announcementText, setAnnouncementText] = useState<string>(
     storeSettings?.announcementText || 'Make Health Better Again'
   );
-  const [videoHeading, setVideoHeading] = useState<string>(
-    storeSettings?.redefineVideoHeading || 'Redefine Yourself'
-  );
-  const [videoUrl, setVideoUrl] = useState<string>(storeSettings?.redefineVideoUrl || '');
-  const [videoPosterUrl, setVideoPosterUrl] = useState<string>(
-    storeSettings?.redefineVideoPosterUrl || ''
-  );
-  const [videoEnabled, setVideoEnabled] = useState<boolean>(
-    storeSettings?.redefineVideoEnabled !== false
-  );
-  const [uploadingMainVideo, setUploadingMainVideo] = useState<boolean>(false);
-  const [mainVideoProgress, setMainVideoProgress] = useState<number>(0);
-  const [mainVideoSaved, setMainVideoSaved] = useState<boolean>(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const mainVideoInputRef = useRef<HTMLInputElement>(null);
+  const [settingsDirty, setSettingsDirty] = useState(false);
+
+  const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [videoUploadProgress, setVideoUploadProgress] = useState(0);
+  const [videoSaved, setVideoSaved] = useState(false);
+  const [isSavingVideo, setIsSavingVideo] = useState(false);
+  const videoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setEditingBanners(banners);
-  }, [banners]);
+    setLocalBanners((prev) => {
+      if (dirtyBannerIds.size === 0) return banners;
+      const prevMap = new Map(prev.map((b) => [b.id, b]));
+      return banners.map((incoming) =>
+        dirtyBannerIds.has(incoming.id) && prevMap.has(incoming.id)
+          ? prevMap.get(incoming.id)!
+          : incoming
+      );
+    });
+  }, [banners, dirtyBannerIds]);
 
   useEffect(() => {
-    if (storeSettings) {
+    if (storeSettings && !settingsDirty) {
+      setRedefineHeading(storeSettings.redefineVideoHeading || 'Redefine Yourself');
+      setRedefineVideoUrl(storeSettings.redefineVideoUrl || DEFAULT_REDEFINE_VIDEO);
+      setRedefinePosterUrl(storeSettings.redefineVideoPosterUrl || DEFAULT_REDEFINE_POSTER);
+      setRedefineEnabled(storeSettings.redefineVideoEnabled ?? true);
       setAnnouncementText(storeSettings.announcementText || 'Make Health Better Again');
-      setVideoHeading(storeSettings.redefineVideoHeading || 'Redefine Yourself');
-      setVideoUrl(storeSettings.redefineVideoUrl || '');
-      setVideoPosterUrl(storeSettings.redefineVideoPosterUrl || '');
-      setVideoEnabled(storeSettings.redefineVideoEnabled !== false);
     }
-  }, [storeSettings]);
+  }, [storeSettings, settingsDirty]);
 
-  const handleMainVideoFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setUploadingMainVideo(true);
-    setMainVideoProgress(10);
-    try {
-      const res = await uploadFileToStorage(file, 'homepage_video', (pct) => {
-        setMainVideoProgress(pct);
-      });
-      if (res.url) {
-        setVideoUrl(res.url);
-        if (onUpdateStoreSettings) {
-          await onUpdateStoreSettings({
-            redefineVideoUrl: res.url,
-            redefineVideoPosterUrl: videoPosterUrl,
-            redefineVideoHeading: videoHeading,
-            redefineVideoEnabled: videoEnabled
-          });
-          setMainVideoSaved(true);
-          setTimeout(() => setMainVideoSaved(false), 2500);
-        }
-      }
-    } catch (err) {
-      console.error('Homepage video upload error:', err);
-    } finally {
-      setUploadingMainVideo(false);
-      setMainVideoProgress(0);
-      if (mainVideoInputRef.current) {
-        mainVideoInputRef.current.value = '';
-      }
-    }
-  };
-
-  const handleRemoveMainVideo = async () => {
-    setVideoUrl('');
-    if (onUpdateStoreSettings) {
-      await onUpdateStoreSettings({
-        redefineVideoUrl: ''
-      });
-      setMainVideoSaved(true);
-      setTimeout(() => setMainVideoSaved(false), 2500);
-    }
-  };
-
-  const handleSaveMainVideoSettings = async () => {
-    if (!onUpdateStoreSettings) return;
-    setSaveError(null);
-    try {
-      await onUpdateStoreSettings({
-        announcementText: announcementText.trim() || 'Make Health Better Again',
-        redefineVideoUrl: videoUrl,
-        redefineVideoPosterUrl: videoPosterUrl,
-        redefineVideoHeading: videoHeading,
-        redefineVideoEnabled: videoEnabled
-      });
-      setMainVideoSaved(true);
-      setTimeout(() => setMainVideoSaved(false), 2500);
-    } catch (err: any) {
-      console.error('Failed to save store settings to Firebase:', err);
-      setSaveError('Failed to save changes. Please try again.');
-    }
-  };
-
-  const handleUpdate = (id: string, field: keyof StoreBanner, value: any) => {
-    setEditingBanners((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, [field]: value } : b))
+  const handleFieldChange = (id: string, field: keyof StoreBanner, value: any) => {
+    setDirtyBannerIds((prev) => new Set(prev).add(id));
+    setLocalBanners((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, [field]: value } : item))
     );
   };
 
-  const handleSave = async (banner: StoreBanner) => {
+  const handleSaveSingleBanner = async (banner: StoreBanner) => {
+    setSavingId(banner.id);
     setSaveError(null);
     try {
       await onSaveBanner(banner);
-      setSavedBannerId(banner.id);
-      setTimeout(() => setSavedBannerId(null), 2500);
+      setDirtyBannerIds((prev) => {
+        const next = new Set(prev);
+        next.delete(banner.id);
+        return next;
+      });
+      setSavedId(banner.id);
+      setTimeout(() => setSavedId(null), 2500);
     } catch (err: any) {
-      console.error('Failed to save banner to Firebase:', err);
-      setSaveError('Failed to save changes. Please try again.');
-    }
-  };
-
-  const handleMoveOrder = async (index: number, direction: 'up' | 'down') => {
-    const target = direction === 'up' ? index - 1 : index + 1;
-    if (target < 0 || target >= editingBanners.length) return;
-    const next = [...editingBanners];
-    const [moved] = next.splice(index, 1);
-    next.splice(target, 0, moved);
-    const reordered = next.map((b, i) => ({ ...b, displayOrder: i + 1 }));
-    setEditingBanners(reordered);
-    for (const b of reordered) {
-      await onSaveBanner(b);
-    }
-  };
-
-  const handleBannerVideoUpload = async (bannerId: string, e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadingVideoId(bannerId);
-    try {
-      const res = await uploadFileToStorage(file, `banners/${bannerId}/video`);
-      if (res.url) {
-        handleUpdate(bannerId, 'videoUrl', res.url);
-      }
-    } catch (err) {
-      console.error('Banner video upload error:', err);
+      console.error('Failed to save banner:', err);
+      setSaveError(err?.message || 'Failed to save banner changes. Please try again.');
     } finally {
-      setUploadingVideoId(null);
+      setSavingId(null);
     }
   };
 
-  const handleAddNewBanner = () => {
+  const handleSaveAll = async () => {
+    setSavingId('all');
+    setSaveError(null);
+    try {
+      for (const b of localBanners) {
+        await onSaveBanner(b);
+      }
+      if (onUpdateStoreSettings) {
+        await onUpdateStoreSettings({
+          redefineVideoHeading: redefineHeading.trim() || 'Redefine Yourself',
+          redefineVideoUrl: redefineVideoUrl.trim() || DEFAULT_REDEFINE_VIDEO,
+          redefineVideoPosterUrl: redefinePosterUrl.trim(),
+          redefineVideoEnabled: redefineEnabled,
+          announcementText: announcementText.trim() || 'Make Health Better Again'
+        });
+      }
+      setDirtyBannerIds(new Set());
+      setSettingsDirty(false);
+      setSavedId('all');
+      setTimeout(() => setSavedId(null), 3000);
+    } catch (err: any) {
+      console.error('Failed to save banners:', err);
+      setSaveError(err?.message || 'Failed to save changes. Please try again.');
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const handleAddBanner = async () => {
     const newBanner: StoreBanner = {
-      id: `banner-${Date.now()}`,
-      title: 'FUEL YOUR POTENTIAL • REPAIR & GROW',
-      subtitle: 'Premium lab-tested supplements delivered anywhere in Nepal.',
-      imageUrl: '',
+      id: `banner_${Date.now()}`,
+      title: 'NEW CAMPAIGN BANNER',
+      subtitle: '100% Authentic Supplements with Free KTM Valley Shipping',
+      imageUrl: 'https://i.ibb.co/DFnZ5Fy/Phone-Version-4-1-1-1.jpg',
       videoUrl: '',
-      buttonText: 'Buy Now',
+      buttonText: 'Shop Now',
       buttonLink: '#catalog',
       enabled: true,
-      displayOrder: editingBanners.length + 1,
-      displayLocation: 'product_promo',
+      displayOrder: localBanners.length + 1,
+      displayLocation: 'hero',
       createdAt: new Date().toISOString()
     };
-    setEditingBanners([...editingBanners, newBanner]);
+    setSaveError(null);
+    try {
+      await onSaveBanner(newBanner);
+    } catch (err: any) {
+      console.error('Failed to add banner:', err);
+      setSaveError(err?.message || 'Failed to add banner.');
+    }
+  };
+
+  const handleBannerVideoFileUpload = async (
+    bannerId: string,
+    e: ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingBannerVideoId(bannerId);
+    setBannerVideoUploadProgress(10);
+    setSaveError(null);
+    try {
+      const res = await uploadFileToStorage(file, 'banners/videos', (pct) =>
+        setBannerVideoUploadProgress(pct)
+      );
+      if (res.url) {
+        handleFieldChange(bannerId, 'videoUrl', res.url);
+        const target = localBanners.find((b) => b.id === bannerId);
+        if (target) {
+          await handleSaveSingleBanner({ ...target, videoUrl: res.url });
+        }
+      }
+    } catch (err: any) {
+      console.error('Banner video upload failed:', err);
+      setSaveError('Failed to upload banner video. Please try again.');
+    } finally {
+      setUploadingBannerVideoId(null);
+      e.target.value = '';
+    }
+  };
+
+  const handleRedefineVideoUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingVideo(true);
+    setVideoUploadProgress(10);
+    setSaveError(null);
+    try {
+      const res = await uploadFileToStorage(file, 'videos/redefine', (pct) =>
+        setVideoUploadProgress(pct)
+      );
+      if (res.url) {
+        setRedefineVideoUrl(res.url);
+        if (onUpdateStoreSettings) {
+          await onUpdateStoreSettings({
+            redefineVideoUrl: res.url,
+            redefineVideoHeading: redefineHeading.trim() || 'Redefine Yourself',
+            redefineVideoPosterUrl: redefinePosterUrl.trim(),
+            redefineVideoEnabled: redefineEnabled
+          });
+          setVideoSaved(true);
+          setTimeout(() => setVideoSaved(false), 3000);
+        }
+      }
+    } catch (err) {
+      console.error('Redefine video upload failed:', err);
+      setSaveError('Failed to upload video. Please try again.');
+    } finally {
+      setUploadingVideo(false);
+      if (videoInputRef.current) videoInputRef.current.value = '';
+    }
+  };
+
+  const handleSaveRedefineSection = async () => {
+    if (!onUpdateStoreSettings) return;
+    setIsSavingVideo(true);
+    setSaveError(null);
+    try {
+      await onUpdateStoreSettings({
+        redefineVideoHeading: redefineHeading.trim() || 'Redefine Yourself',
+        redefineVideoUrl: redefineVideoUrl.trim() || DEFAULT_REDEFINE_VIDEO,
+        redefineVideoPosterUrl: redefinePosterUrl.trim(),
+        redefineVideoEnabled: redefineEnabled,
+        announcementText: announcementText.trim() || 'Make Health Better Again'
+      });
+      setSettingsDirty(false);
+      setVideoSaved(true);
+      setTimeout(() => setVideoSaved(false), 3000);
+    } catch (err: any) {
+      console.error('Failed to save store settings:', err);
+      setSaveError(err?.message || 'Failed to save changes. Please try again.');
+    } finally {
+      setIsSavingVideo(false);
+    }
   };
 
   return (
-    <div className="space-y-6">
-      {saveError && (
-        <div className="bg-red-50 border border-red-300 text-red-800 px-4 py-3 rounded-xl text-xs font-bold">
-          {saveError}
-        </div>
-      )}
-      {/* 1. HOMEPAGE "MODIFY / REDEFINE YOURSELF" VIDEO MANAGER */}
-      <div className="bg-white rounded-2xl border-2 border-neutral-900 shadow-xs p-5 space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-200 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-neutral-950 text-[#FFCD00] flex items-center justify-center shrink-0">
-              <Film className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-base sm:text-lg font-black text-neutral-950 tracking-tight">
-                Homepage Showcase Video (&ldquo;Redefine / Modify Yourself&rdquo;)
-              </h2>
-              <p className="text-xs text-neutral-500">
-                Upload, replace, preview, or remove the main athlete video displayed on the public homepage.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <span className="text-xs font-bold uppercase text-neutral-700">
-              {videoEnabled ? 'Visible on Homepage' : 'Hidden'}
-            </span>
-            <button
-              type="button"
-              onClick={async () => {
-                const next = !videoEnabled;
-                setVideoEnabled(next);
-                if (onUpdateStoreSettings) {
-                  await onUpdateStoreSettings({ redefineVideoEnabled: next });
-                }
-              }}
-              className={`w-10 h-5 rounded-full p-0.5 transition-colors cursor-pointer ${
-                videoEnabled ? 'bg-emerald-500' : 'bg-neutral-300'
-              }`}
-            >
-              <div
-                className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                  videoEnabled ? 'translate-x-5' : 'translate-x-0'
-                }`}
-              />
-            </button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
-          {/* Left: Video Upload + Live Video Player Preview */}
-          <div className="md:col-span-6 bg-neutral-50 p-4 rounded-xl border border-neutral-200 space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-black uppercase tracking-wider text-neutral-900 flex items-center gap-1.5">
-                <Video className="w-4 h-4 text-neutral-700" />
-                <span>Video File</span>
-              </span>
-
-              <input
-                type="file"
-                accept="video/*"
-                ref={mainVideoInputRef}
-                onChange={handleMainVideoFileUpload}
-                className="hidden"
-              />
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => mainVideoInputRef.current?.click()}
-                  disabled={uploadingMainVideo}
-                  className="px-3.5 py-2 bg-neutral-950 hover:bg-neutral-800 text-white text-xs font-black uppercase rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  {uploadingMainVideo ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-[#FFCD00]" />
-                      <span>Uploading {mainVideoProgress}%...</span>
-                    </>
-                  ) : videoUrl ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 text-[#FFCD00]" />
-                      <span>Replace Video</span>
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="w-3.5 h-3.5 text-[#FFCD00]" />
-                      <span>+ Upload New Video</span>
-                    </>
-                  )}
-                </button>
-
-                {videoUrl && !uploadingMainVideo && (
-                  <button
-                    type="button"
-                    onClick={handleRemoveMainVideo}
-                    className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold uppercase rounded-lg flex items-center gap-1 cursor-pointer"
-                    title="Remove current video"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Remove</span>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {uploadingMainVideo && (
-              <div className="w-full bg-amber-50 border border-amber-200 p-3 rounded-lg space-y-1.5">
-                <div className="flex justify-between text-xs font-bold text-amber-900">
-                  <span>Saving video to database...</span>
-                  <span>{mainVideoProgress}%</span>
-                </div>
-                <div className="w-full h-1.5 bg-amber-200 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-amber-500 transition-all duration-200"
-                    style={{ width: `${mainVideoProgress}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Video Preview Box */}
-            {videoUrl ? (
-              <div className="space-y-2">
-                <span className="text-[11px] font-bold uppercase text-emerald-700 block">
-                  ✓ Live Uploaded Video Preview
-                </span>
-                <div className="w-full max-w-[240px] mx-auto aspect-[9/14] rounded-2xl overflow-hidden bg-black border border-neutral-300 shadow-md">
-                  <ResolvedVideoPlayer
-                    videoUrl={videoUrl}
-                    posterUrl={videoPosterUrl}
-                    className="w-full h-full object-cover bg-black"
-                  />
-                </div>
-              </div>
-            ) : (
-              <div
-                onClick={() => mainVideoInputRef.current?.click()}
-                className="border-2 border-dashed border-neutral-300 hover:border-neutral-900 rounded-xl p-8 text-center cursor-pointer bg-white transition-colors"
-              >
-                <Video className="w-8 h-8 text-neutral-400 mx-auto mb-2" />
-                <p className="text-xs font-bold text-neutral-800">
-                  No video file uploaded yet
-                </p>
-                <p className="text-[11px] text-neutral-500 mt-1">
-                  Click &ldquo;+ Upload New Video&rdquo; to select an MP4 / WebM / MOV video from your device.
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Right: Section Title, Announcement Bar & Optional Cover Thumbnail Upload */}
-          <div className="md:col-span-6 space-y-4">
-            <div>
-              <label className="text-xs font-bold uppercase tracking-wider text-neutral-800 block mb-1">
-                Top Announcement Bar Text
-              </label>
-              <input
-                type="text"
-                value={announcementText}
-                onChange={(e) => setAnnouncementText(e.target.value)}
-                placeholder="Make Health Better Again"
-                className="w-full text-xs font-bold p-2.5 bg-neutral-50 border border-neutral-300 rounded-lg focus:outline-none focus:border-neutral-900"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-bold uppercase tracking-wider text-neutral-800 block mb-1">
-                Video Section Heading
-              </label>
-              <input
-                type="text"
-                value={videoHeading}
-                onChange={(e) => setVideoHeading(e.target.value)}
-                placeholder="Redefine Yourself"
-                className="w-full text-xs font-bold p-2.5 bg-neutral-50 border border-neutral-300 rounded-lg focus:outline-none focus:border-neutral-900"
-              />
-            </div>
-
-            <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-200">
-              <ImageUploader
-                label="Video Cover Thumbnail / Poster Image"
-                folder="homepage_video_poster"
-                images={videoPosterUrl ? [videoPosterUrl] : []}
-                onChange={(urls) => setVideoPosterUrl(urls[0] || '')}
-                multiple={false}
-                maxFiles={1}
-                aspectRatio="tall"
-                helperText="Displayed as the cover image before the visitor presses Play."
-              />
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <button
-                type="button"
-                onClick={handleSaveMainVideoSettings}
-                className={`px-5 py-2.5 text-xs font-black uppercase rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs ${
-                  mainVideoSaved
-                    ? 'bg-emerald-500 text-white'
-                    : 'bg-neutral-950 hover:bg-neutral-800 text-white'
-                }`}
-              >
-                {mainVideoSaved ? (
-                  <>
-                    <Check className="w-4 h-4 stroke-[3]" />
-                    <span>Saved Live to Website!</span>
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4 text-[#FFCD00]" />
-                    <span>Save Video Section</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 2. PROMOTIONAL BANNERS HEADER */}
-      <div className="bg-white rounded-2xl border border-neutral-200/90 shadow-xs p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-6 pb-10">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-neutral-900 border border-neutral-800 p-4 rounded-xl">
         <div>
-          <h2 className="text-xl sm:text-2xl font-black text-neutral-900 tracking-tight">
-            Promotional Banners
-          </h2>
-          <p className="text-xs text-neutral-500 mt-0.5">
-            Manage Hero banners and Product Page promotional banners.
+          <h3 className="text-sm font-black uppercase tracking-wider text-white flex items-center gap-2">
+            <ImageIcon className="w-4 h-4 text-[#FFCD00]" />
+            Homepage Banners, Videos &amp; Promotional Media
+          </h3>
+          <p className="text-xs text-neutral-400 mt-0.5">
+            Upload and manage Hero Banners, Product Promo Banners, and the &ldquo;Redefine Yourself&rdquo; video section.
           </p>
         </div>
 
         <button
           type="button"
-          onClick={handleAddNewBanner}
-          className="bg-neutral-950 hover:bg-neutral-800 text-white font-black text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs"
+          onClick={handleAddBanner}
+          className="flex items-center gap-2 px-4 py-2.5 bg-[#FFCD00] hover:bg-[#ffe04d] text-black font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer shrink-0"
         >
-          <Plus className="w-4 h-4 text-[#FFCD00]" />
-          <span>+ Add Banner</span>
+          <Plus className="w-4 h-4" />
+          <span>+ New Banner</span>
         </button>
       </div>
 
-      {/* Banners List */}
-      <div className="space-y-4">
-        {editingBanners.length === 0 ? (
-          <div className="bg-white p-12 text-center text-neutral-400 text-xs rounded-2xl border border-neutral-200">
-            No banners configured yet. Click &ldquo;+ Add Banner&rdquo; to create a new promotional graphic or video.
+      {/* Error Alert Banner */}
+      {saveError && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 flex items-center gap-3 text-xs text-red-300 font-bold">
+          <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+          <span>{saveError}</span>
+        </div>
+      )}
+
+      {/* 1. REDEFINE YOURSELF HOMEPAGE VIDEO SECTION MANAGER */}
+      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 sm:p-6 space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[#FFCD00]/15 border border-[#FFCD00]/30 flex items-center justify-center text-[#FFCD00]">
+              <Video className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-black uppercase tracking-wider text-white">
+                &ldquo;Redefine Yourself&rdquo; Homepage Video &amp; Announcement Bar
+              </h4>
+              <p className="text-xs text-neutral-400">
+                Manage the full-width vertical/portrait video showcase and top announcement bar text.
+              </p>
+            </div>
           </div>
-        ) : (
-          editingBanners.map((banner, idx) => {
-            const isSaved = savedBannerId === banner.id;
 
-            return (
-              <div
-                key={banner.id}
-                className="bg-white rounded-2xl border border-neutral-200/90 shadow-xs p-5 space-y-4"
-              >
-                <div className="flex items-center justify-between border-b pb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-black uppercase text-neutral-900">
-                      #{idx + 1} • {banner.title || 'Untitled Banner'}
-                    </span>
-                    <span className="text-[10px] font-mono uppercase bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded">
-                      {banner.displayLocation}
-                    </span>
-                  </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setSettingsDirty(true);
+                setRedefineEnabled(!redefineEnabled);
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider cursor-pointer transition-colors ${
+                redefineEnabled
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  : 'bg-neutral-800 text-neutral-400'
+              }`}
+            >
+              {redefineEnabled ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+              <span>{redefineEnabled ? 'Visible on Home' : 'Hidden'}</span>
+            </button>
 
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleMoveOrder(idx, 'up')}
-                      disabled={idx === 0}
-                      className="p-1.5 bg-neutral-100 hover:bg-neutral-200 rounded disabled:opacity-30 cursor-pointer"
-                      title="Move Banner Up"
-                    >
-                      <ArrowUp className="w-3.5 h-3.5" />
-                    </button>
+            <button
+              type="button"
+              onClick={handleSaveRedefineSection}
+              disabled={isSavingVideo || uploadingVideo}
+              className="flex items-center gap-1.5 px-4 py-2 bg-[#FFCD00] hover:bg-[#ffe04d] text-black font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+            >
+              {videoSaved ? (
+                <>
+                  <Check className="w-4 h-4 text-emerald-900" />
+                  <span>Saved!</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  <span>{isSavingVideo ? 'Saving...' : 'Save Video Settings'}</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleMoveOrder(idx, 'down')}
-                      disabled={idx === editingBanners.length - 1}
-                      className="p-1.5 bg-neutral-100 hover:bg-neutral-200 rounded disabled:opacity-30 cursor-pointer"
-                      title="Move Banner Down"
-                    >
-                      <ArrowDown className="w-3.5 h-3.5" />
-                    </button>
-
-                    <span className="text-xs font-bold uppercase text-neutral-600 ml-2">
-                      {banner.enabled ? 'Enabled' : 'Disabled'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleUpdate(banner.id, 'enabled', !banner.enabled)}
-                      className={`w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer ${
-                        banner.enabled ? 'bg-emerald-500' : 'bg-neutral-300'
-                      }`}
-                    >
-                      <div
-                        className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                          banner.enabled ? 'translate-x-4' : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
-                  </div>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Video Preview Column */}
+          <div className="lg:col-span-4 flex flex-col items-center">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-2 self-start">
+              Live Video Preview
+            </span>
+            <div className="w-full max-w-[240px] aspect-[9/16] rounded-xl overflow-hidden bg-black border border-neutral-800 relative shadow-lg">
+              {redefineVideoUrl ? (
+                <video
+                  key={redefineVideoUrl}
+                  src={redefineVideoUrl}
+                  poster={redefinePosterUrl || undefined}
+                  controls
+                  muted
+                  playsInline
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-xs text-neutral-500">
+                  No Video Selected
                 </div>
+              )}
+            </div>
+          </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
-                  {/* Left: Direct File Upload (Image + Optional Video) */}
-                  <div className="md:col-span-5 bg-neutral-50 p-4 rounded-xl border border-neutral-200 space-y-4">
-                    <ImageUploader
-                      label="Banner Image"
-                      folder="banners"
-                      images={banner.imageUrl ? [banner.imageUrl] : []}
-                      onChange={(newUrls) => handleUpdate(banner.id, 'imageUrl', newUrls[0] || '')}
-                      multiple={false}
-                      maxFiles={1}
-                      aspectRatio="wide"
-                    />
-
-                    {/* Optional Banner Video Upload */}
-                    <div className="pt-3 border-t border-neutral-200 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold uppercase text-neutral-700 flex items-center gap-1">
-                          <Video className="w-3.5 h-3.5" />
-                          <span>Optional Banner Video</span>
-                        </span>
-                        <input
-                          type="file"
-                          accept="video/*"
-                          ref={(el) => {
-                            videoInputRefs.current[banner.id] = el;
-                          }}
-                          onChange={(e) => handleBannerVideoUpload(banner.id, e)}
-                          className="hidden"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => videoInputRefs.current[banner.id]?.click()}
-                          disabled={uploadingVideoId === banner.id}
-                          className="px-2.5 py-1 bg-neutral-900 text-white text-[10px] font-bold uppercase rounded flex items-center gap-1 cursor-pointer"
-                        >
-                          {uploadingVideoId === banner.id ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <Upload className="w-3 h-3 text-[#FFCD00]" />
-                          )}
-                          <span>{banner.videoUrl ? 'Replace Video' : '+ Upload Video'}</span>
-                        </button>
-                      </div>
-
-                      {banner.videoUrl && (
-                        <div className="flex items-center justify-between gap-2 bg-white p-2 rounded border border-neutral-200">
-                          <ResolvedVideoPlayer
-                            videoUrl={banner.videoUrl}
-                            className="w-32 h-18 object-cover rounded bg-black"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleUpdate(banner.id, 'videoUrl', '')}
-                            className="text-[10px] font-bold text-red-600 hover:underline cursor-pointer"
-                          >
-                            Remove Video
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Right: Content fields */}
-                  <div className="md:col-span-7 space-y-3">
-                    <div>
-                      <label className="text-[11px] font-bold uppercase tracking-wider text-neutral-700 block mb-1">
-                        Title / Heading
-                      </label>
-                      <input
-                        type="text"
-                        value={banner.title}
-                        onChange={(e) => handleUpdate(banner.id, 'title', e.target.value)}
-                        className="w-full text-xs font-bold p-2.5 bg-neutral-50 border border-neutral-300 rounded-lg focus:outline-none focus:border-neutral-900"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[11px] font-bold uppercase tracking-wider text-neutral-700 block mb-1">
-                        Subtitle / Description
-                      </label>
-                      <textarea
-                        value={banner.subtitle || ''}
-                        onChange={(e) => handleUpdate(banner.id, 'subtitle', e.target.value)}
-                        rows={2}
-                        className="w-full text-xs p-2.5 bg-neutral-50 border border-neutral-300 rounded-lg focus:outline-none focus:border-neutral-900"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div>
-                        <label className="text-[11px] font-bold uppercase tracking-wider text-neutral-700 block mb-1">
-                          Button Text
-                        </label>
-                        <input
-                          type="text"
-                          value={banner.buttonText || ''}
-                          onChange={(e) => handleUpdate(banner.id, 'buttonText', e.target.value)}
-                          placeholder="e.g. Buy Now"
-                          className="w-full text-xs p-2 bg-neutral-50 border border-neutral-300 rounded-lg"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-[11px] font-bold uppercase tracking-wider text-neutral-700 block mb-1">
-                          Button Link
-                        </label>
-                        <input
-                          type="text"
-                          value={banner.buttonLink || '#catalog'}
-                          onChange={(e) => handleUpdate(banner.id, 'buttonLink', e.target.value)}
-                          placeholder="#catalog"
-                          className="w-full text-xs font-mono p-2 bg-neutral-50 border border-neutral-300 rounded-lg"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-[11px] font-bold uppercase tracking-wider text-neutral-700 block mb-1">
-                          Display Location
-                        </label>
-                        <select
-                          value={banner.displayLocation}
-                          onChange={(e) =>
-                            handleUpdate(banner.id, 'displayLocation', e.target.value as any)
-                          }
-                          className="w-full text-xs p-2 bg-neutral-50 border border-neutral-300 rounded-lg"
-                        >
-                          <option value="product_promo">Product Page Promotional Banner</option>
-                          <option value="hero">Homepage Hero Banner</option>
-                          <option value="popup">Top Announcement Banner</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-3 border-t">
-                  {confirmDeleteId === banner.id ? (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        await onDeleteBanner(banner.id);
-                        setEditingBanners((prev) => prev.filter((b) => b.id !== banner.id));
-                        setConfirmDeleteId(null);
-                      }}
-                      className="px-3 py-1.5 bg-red-600 text-white text-xs font-black uppercase rounded-lg cursor-pointer"
-                    >
-                      Confirm Delete Banner
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDeleteId(banner.id)}
-                      className="text-xs text-red-600 hover:underline flex items-center gap-1 cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Delete Banner</span>
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => handleSave(banner)}
-                    className={`px-4 py-2 text-xs font-black uppercase rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                      isSaved ? 'bg-emerald-500 text-white' : 'bg-neutral-950 text-white'
-                    }`}
-                  >
-                    {isSaved ? <Check className="w-3.5 h-3.5 stroke-[3]" /> : <Save className="w-3.5 h-3.5" />}
-                    <span>{isSaved ? 'Published!' : 'Save Banner'}</span>
-                  </button>
-                </div>
+          {/* Video Upload & Settings Column */}
+          <div className="lg:col-span-8 space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-1">
+                  Section Heading Title
+                </label>
+                <input
+                  type="text"
+                  value={redefineHeading}
+                  onChange={(e) => {
+                    setSettingsDirty(true);
+                    setRedefineHeading(e.target.value);
+                  }}
+                  placeholder="Redefine Yourself"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-[#FFCD00]"
+                />
               </div>
-            );
-          })
-        )}
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-1">
+                  Top Announcement Bar Text
+                </label>
+                <input
+                  type="text"
+                  value={announcementText}
+                  onChange={(e) => {
+                    setSettingsDirty(true);
+                    setAnnouncementText(e.target.value);
+                  }}
+                  placeholder="Make Health Better Again"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-[#FFCD00]"
+                />
+              </div>
+            </div>
+
+            {/* Direct Video File Upload */}
+            <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-300">
+                  Video Source (Upload MP4/WebM or Paste Direct Video URL)
+                </label>
+                <input
+                  ref={videoInputRef}
+                  type="file"
+                  accept="video/mp4,video/webm,video/quicktime,video/*"
+                  onChange={handleRedefineVideoUpload}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => videoInputRef.current?.click()}
+                  disabled={uploadingVideo}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FFCD00] hover:bg-[#ffe04d] text-black font-black text-[10px] uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
+                >
+                  {uploadingVideo ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Uploading {videoUploadProgress}%</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Upload Video File</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <input
+                type="url"
+                value={redefineVideoUrl}
+                onChange={(e) => {
+                  setSettingsDirty(true);
+                  setRedefineVideoUrl(e.target.value);
+                }}
+                placeholder="https://... (.mp4 or video URL)"
+                className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-neutral-200 font-mono focus:outline-none focus:border-[#FFCD00]"
+              />
+            </div>
+
+            {/* Poster Thumbnail Image Uploader */}
+            <div className="pt-1">
+              <ImageUploader
+                label="Video Cover / Poster Thumbnail Image"
+                value={redefinePosterUrl}
+                onChange={(url) => {
+                  setSettingsDirty(true);
+                  setRedefinePosterUrl(url);
+                }}
+                folder="banners/posters"
+                aspectRatio="banner"
+                helperText="Displayed while the video loads or before playback starts."
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. PROMOTIONAL BANNERS LIST */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {localBanners.map((banner) => (
+          <div
+            key={banner.id}
+            className={`bg-neutral-900 border rounded-2xl p-5 space-y-4 transition-all ${
+              banner.enabled ? 'border-neutral-800' : 'border-neutral-800/40 opacity-60'
+            }`}
+          >
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#FFCD00]/15 text-[#FFCD00] border border-[#FFCD00]/30">
+                  {banner.displayLocation === 'hero'
+                    ? 'Homepage Hero'
+                    : banner.displayLocation === 'product_promo'
+                    ? 'Product Page Promo'
+                    : 'Announcement Popup'}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const updated = { ...banner, enabled: !banner.enabled };
+                    handleFieldChange(banner.id, 'enabled', updated.enabled);
+                    await handleSaveSingleBanner(updated);
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider cursor-pointer transition-colors ${
+                    banner.enabled
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : 'bg-neutral-800 text-neutral-400'
+                  }`}
+                >
+                  {banner.enabled ? (
+                    <>
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Active</span>
+                    </>
+                  ) : (
+                    <>
+                      <EyeOff className="w-3.5 h-3.5" />
+                      <span>Hidden</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onDeleteBanner(banner.id)}
+                  className="p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer"
+                  title="Delete Banner"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Banner Image Uploader */}
+            <ImageUploader
+              label="Banner Graphic (Uploads to Firebase Storage)"
+              value={banner.imageUrl}
+              onChange={async (url) => {
+                const updated = { ...banner, imageUrl: url };
+                handleFieldChange(banner.id, 'imageUrl', url);
+                await handleSaveSingleBanner(updated);
+              }}
+              folder="banners"
+              aspectRatio="banner"
+            />
+
+            {/* Optional Banner Background Video */}
+            <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+                  <Video className="w-3.5 h-3.5 text-[#FFCD00]" />
+                  <span>Optional Banner Video (MP4 / URL)</span>
+                </label>
+                <label className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-white text-[10px] font-bold uppercase rounded cursor-pointer transition-colors inline-flex items-center gap-1">
+                  {uploadingBannerVideoId === banner.id ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin text-[#FFCD00]" />
+                      <span>{bannerVideoUploadProgress}%</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-3 h-3 text-[#FFCD00]" />
+                      <span>Upload Video</span>
+                    </>
+                  )}
+                  <input
+                    type="file"
+                    accept="video/mp4,video/webm,video/*"
+                    onChange={(e) => handleBannerVideoFileUpload(banner.id, e)}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+              <input
+                type="url"
+                value={banner.videoUrl || ''}
+                onChange={(e) => handleFieldChange(banner.id, 'videoUrl', e.target.value)}
+                placeholder="Optional video URL (leave blank to use banner image)"
+                className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-1.5 text-xs text-neutral-200 font-mono focus:outline-none focus:border-[#FFCD00]"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="sm:col-span-2">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-1">
+                  Headline Title
+                </label>
+                <input
+                  type="text"
+                  value={banner.title}
+                  onChange={(e) => handleFieldChange(banner.id, 'title', e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-[#FFCD00]"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-1">
+                  Subtitle / Campaign Offer
+                </label>
+                <input
+                  type="text"
+                  value={banner.subtitle || ''}
+                  onChange={(e) => handleFieldChange(banner.id, 'subtitle', e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-[#FFCD00]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-1">
+                  Placement Location
+                </label>
+                <select
+                  value={banner.displayLocation}
+                  onChange={(e) =>
+                    handleFieldChange(banner.id, 'displayLocation', e.target.value)
+                  }
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-[#FFCD00]"
+                >
+                  <option value="hero">Homepage Hero Banner</option>
+                  <option value="product_promo">Product Page Promo Banner</option>
+                  <option value="popup">Storefront Offer Highlight</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-1">
+                  CTA Button Text
+                </label>
+                <input
+                  type="text"
+                  value={banner.buttonText || ''}
+                  onChange={(e) => handleFieldChange(banner.id, 'buttonText', e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-[#FFCD00]"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-neutral-800/80">
+              <button
+                type="button"
+                onClick={() => handleSaveSingleBanner(banner)}
+                disabled={savingId === banner.id}
+                className="flex items-center gap-1.5 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer"
+              >
+                {savedId === banner.id ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="text-emerald-400">Saved</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-3.5 h-3.5 text-[#FFCD00]" />
+                    <span>{savingId === banner.id ? 'Saving...' : 'Save Banner'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Save Action Footer */}
+      <div className="flex justify-end bg-neutral-900 border border-neutral-800 p-4 rounded-xl">
+        <button
+          type="button"
+          onClick={handleSaveAll}
+          disabled={savingId !== null}
+          className="flex items-center gap-2 px-6 py-3 bg-[#FFCD00] hover:bg-[#ffe04d] text-black font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-lg"
+        >
+          {savedId === 'all' ? (
+            <>
+              <Check className="w-4 h-4 text-emerald-900" />
+              <span>Saved to Firebase</span>
+            </>
+          ) : (
+            <>
+              <Save className="w-4 h-4" />
+              <span>{savingId === 'all' ? 'Saving...' : 'Save All Banner Changes'}</span>
+            </>
+          )}
+        </button>
       </div>
     </div>
   );

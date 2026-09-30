@@ -173,24 +173,20 @@ export default function ProductPage({
       }));
   }, [liveReviews, product.id, product.name, product.testimonials, product.customerGallery]);
 
-  // Promotional banner config (product-specific or global product_promo banner from Firebase)
+  // Permanent Promotional banner config
   const effectivePromoBanner = useMemo(() => {
-    const globalPromo = liveBanners.find(
-      (b) => b.enabled && b.displayLocation === 'product_promo' && b.imageUrl
-    );
-    if (globalPromo) {
-      return {
-        enabled: true,
-        eyebrow: 'Limited Time',
-        image: globalPromo.imageUrl,
-        heading: globalPromo.title || 'FREE DELIVERY',
-        description: globalPromo.subtitle || `On ${product.name}!`,
-        buttonText: globalPromo.buttonText || 'Shop Now',
-        buttonLink: globalPromo.buttonLink || '#purchase'
-      };
-    }
-    return product.promotionalBanner;
-  }, [liveBanners, product.promotionalBanner, product.name]);
+    return {
+      enabled: true,
+      eyebrow: 'Limited Time',
+      image: 'https://i.ibb.co/KcBDpGYD/MV2-1-1-1.jpg',
+      heading: 'FREE DELIVERY',
+      description: `On ${product.id === 'wellcore-creatine' ? 'Wellcore Creatine' : product.name}!`,
+      buttonText: 'Shop Now',
+      buttonLink: '#purchase',
+      bgColor: '#070d19',
+      textColor: '#FFFFFF'
+    };
+  }, [product.id, product.name]);
 
   // Flavors for multi-unit bundles
   const [selectedBundleFlavors, setSelectedBundleFlavors] = useState<string[]>([

@@ -327,6 +327,7 @@ export default function App() {
           onRemoveItem={handleRemoveItem}
           selectedRegion={selectedRegion}
           onSelectRegion={setSelectedRegion}
+          onClearCart={handleClearCart}
           onProceedToCheckout={() => {
             setIsCartOpen(false);
             setIsCheckoutOpen(true);
@@ -374,13 +375,6 @@ export default function App() {
           setCurrentStorePage(page);
         }}
       />
-
-      {/* Store Paused Banner if Admin Toggled Store Offline */}
-      {storeSettings && !storeSettings.openForOrders && (
-        <div className="bg-amber-500 text-black text-center py-2 px-4 text-xs font-black uppercase tracking-wider">
-          Store is currently in busy mode — New orders will be processed on next dispatch window.
-        </div>
-      )}
 
       {currentStorePage !== 'home' ? (
         <StorePages
@@ -442,6 +436,7 @@ export default function App() {
         onRemoveItem={handleRemoveItem}
         selectedRegion={selectedRegion}
         onSelectRegion={setSelectedRegion}
+        onClearCart={handleClearCart}
         onProceedToCheckout={() => {
           setIsCartOpen(false);
           setIsCheckoutOpen(true);

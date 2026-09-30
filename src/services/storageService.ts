@@ -129,6 +129,49 @@ async function saveDataUrlToFirestoreChunks(
 }
 
 /**
+ * Ensures any media URL saved into a Firestore document is permanent and lightweight:
+ * - Rejects temporary `blob:` URLs
+ * - Offloads large inline `data:` URLs (>60KB) into `firestore-media://{mediaId}` chunks
+ *   so the parent Firestore document never exceeds Firestore's 1MB size limit.
+ */
+export async function sanitizeMediaUrlForFirestore(
+  url?: string | null,
+  label = 'media.jpg'
+): Promise<string> {
+  if (!url || typeof url !== 'string') return '';
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+
+  if (trimmed.startsWith('blob:')) {
+    throw new Error(
+      'Cannot save a temporary browser URL (blob:). Please re-upload the image and wait for upload to complete.'
+    );
+  }
+
+  if (trimmed.startsWith('data:') && trimmed.length > 60 * 1024) {
+    const mimeMatch = trimmed.match(/^data:([^;]+);base64,/);
+    const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+    const syntheticFile = new File([], label, { type: mimeType });
+    return await saveDataUrlToFirestoreChunks(trimmed, syntheticFile);
+  }
+
+  return trimmed;
+}
+
+export async function sanitizeMediaArrayForFirestore(
+  urls?: string[] | null,
+  labelPrefix = 'gallery'
+): Promise<string[]> {
+  if (!Array.isArray(urls)) return [];
+  const results: string[] = [];
+  for (let i = 0; i < urls.length; i++) {
+    const clean = await sanitizeMediaUrlForFirestore(urls[i], `${labelPrefix}_${i}.jpg`);
+    if (clean) results.push(clean);
+  }
+  return results;
+}
+
+/**
  * Resolves a media URL.
  * - If it is a `firestore-media://{mediaId}` URI, fetches chunks from Firestore and returns a permanent Data URL (for images) or Blob URL (for videos).
  * - If it is a `gs://` URI or relative Firebase Storage reference, resolves via `getDownloadURL`.

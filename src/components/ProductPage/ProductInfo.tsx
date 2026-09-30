@@ -1,5 +1,8 @@
+import { Product } from '../../types';
+
 interface ProductInfoProps {
-  title: string;
+  product?: Product;
+  title?: string;
   tagline?: string;
   brand?: string;
   category?: string;
@@ -10,62 +13,59 @@ interface ProductInfoProps {
 }
 
 export default function ProductInfo({
+  product,
   title,
   tagline,
   price,
   originalPrice,
-  discountPercentage,
-  isSoldOut = false
+  isSoldOut
 }: ProductInfoProps) {
-  const calculatedDiscount =
-    discountPercentage ||
-    (originalPrice && price && originalPrice > price
-      ? Math.round(((originalPrice - price) / originalPrice) * 100)
-      : 0);
+  const resolvedTitle = title ?? product?.name ?? '';
+  const resolvedPrice = price ?? product?.price ?? 0;
+  const resolvedOriginalPrice = originalPrice ?? product?.originalPrice ?? resolvedPrice;
+  const resolvedSoldOut =
+    isSoldOut ??
+    (Boolean(product?.isSoldOut) || (typeof product?.stock === 'number' && product.stock <= 0));
+
+  const displayTagline =
+    tagline ||
+    product?.tagline ||
+    product?.shortDescription ||
+    '100% Authentic Supplement | Lab Tested in Nepal';
 
   return (
-    <div className="w-full flex flex-col space-y-3 py-2">
+    <div className="space-y-2 pb-1">
       {/* Main Product Title */}
-      <h1
-        className="text-2xl sm:text-3xl lg:text-[34px] font-black text-neutral-950 tracking-tight leading-[1.15]"
-        style={{ textWrap: 'balance' }}
-      >
-        {title}
+      <h1 className="text-[28px] sm:text-[36px] font-bold tracking-[-0.02em] text-[#121212] leading-[1.18]">
+        {resolvedTitle}
       </h1>
 
-      {/* Subtitle */}
-      {tagline && (
-        <p className="text-sm sm:text-base text-neutral-600 font-medium leading-relaxed">
-          {tagline}
-        </p>
-      )}
+      {/* Subtitle / Tagline */}
+      <p className="text-[14px] text-[#121212]/75 font-normal leading-relaxed">
+        {displayTagline}
+      </p>
 
-      {/* Pricing Block: Current Price, Original Crossed-Out Price, SAVE % / Sold Out Badge */}
-      {typeof price === 'number' && (
-        <div className="flex items-center flex-wrap gap-3 pt-1">
-          <span className="text-2xl sm:text-3xl font-black text-neutral-950 tabular-nums">
-            Rs {price.toLocaleString('en-US')}
+      {/* Price & Status Row */}
+      <div className="pt-1 flex flex-wrap items-center gap-3">
+        {resolvedOriginalPrice > resolvedPrice && (
+          <span className="text-[15px] text-[#121212]/55 line-through font-normal">
+            Rs. {resolvedOriginalPrice.toLocaleString('en-US')}.00 NPR
           </span>
+        )}
+        <span className="text-[18px] font-bold text-[#121212] tracking-tight">
+          Rs. {resolvedPrice.toLocaleString('en-US')}.00 NPR
+        </span>
 
-          {typeof originalPrice === 'number' && originalPrice > price && (
-            <span className="text-base sm:text-lg text-neutral-400 line-through font-medium tabular-nums">
-              Rs {originalPrice.toLocaleString('en-US')}
-            </span>
-          )}
-
-          {isSoldOut ? (
-            <span className="bg-neutral-900 text-white text-xs font-extrabold uppercase tracking-wider px-3 py-1">
-              Sold Out
-            </span>
-          ) : (
-            calculatedDiscount > 0 && (
-              <span className="bg-[#0c1a3b] text-white text-xs font-extrabold uppercase tracking-wider px-3 py-1 tabular-nums">
-                SAVE {calculatedDiscount}%
-              </span>
-            )
-          )}
-        </div>
-      )}
+        {resolvedSoldOut ? (
+          <span className="bg-[#242833] text-white text-[11px] font-medium px-3 py-0.5 rounded-full tracking-wide">
+            Sold out
+          </span>
+        ) : (
+          <span className="bg-[#121212] text-white text-[11px] font-medium px-3 py-0.5 rounded-full tracking-wide">
+            Sale
+          </span>
+        )}
+      </div>
     </div>
   );
 }

@@ -225,6 +225,7 @@ export interface PaymentMethodSetting {
   name: string;
   code: 'cod' | 'esewa' | 'bank' | string;
   enabled: boolean;
+  qrEnabled?: boolean;
   accountName?: string;
   accountNumber?: string;
   qrImageUrl?: string;
