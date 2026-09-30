@@ -1,6 +1,20 @@
-import { useState } from 'react';
-import { Package, AlertTriangle, CheckCircle2, Plus, Minus, Search, Save, Check } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { AlertCircle, Plus, Minus, Search, Save, Check } from 'lucide-react';
 import { Product } from '../../types';
+import { useResolvedMediaUrl } from '../../services/storageService';
+
+function StockProductThumb({ src }: { src?: string }) {
+  const resolved = useResolvedMediaUrl(src);
+  if (!resolved) return null;
+  return (
+    <img
+      src={resolved}
+      alt=""
+      referrerPolicy="no-referrer"
+      className="w-full h-full object-contain"
+    />
+  );
+}
 
 interface AdminStockTabProps {
   products: Product[];
@@ -8,16 +22,22 @@ interface AdminStockTabProps {
 }
 
 export default function AdminStockTab({ products = [], onSaveProduct }: AdminStockTabProps) {
-  const [stockMap, setStockMap] = useState<Record<string, number>>(() => {
-    const map: Record<string, number> = {};
-    products.forEach((p) => {
-      map[p.id] = (p as any).stock ?? 50;
-    });
-    return map;
-  });
-
+  const [stockMap, setStockMap] = useState<Record<string, number>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Keep stockMap synced with live products from Firestore
+  useEffect(() => {
+    setStockMap((prev) => {
+      const next: Record<string, number> = { ...prev };
+      products.forEach((p) => {
+        next[p.id] = typeof p.stock === 'number' ? p.stock : p.isSoldOut ? 0 : 50;
+      });
+      return next;
+    });
+  }, [products]);
 
   const filteredProducts = products.filter((p) =>
     p.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -32,16 +52,21 @@ export default function AdminStockTab({ products = [], onSaveProduct }: AdminSto
   };
 
   const handleSaveStock = async (product: Product) => {
-    const newStock = stockMap[product.id] ?? 50;
+    const newStock = Math.max(0, Number(stockMap[product.id] ?? product.stock ?? 50));
     setSavingId(product.id);
+    setSaveError(null);
     try {
       await onSaveProduct({
         ...product,
-        isSoldOut: newStock <= 0,
-        ...({ stock: newStock } as any)
+        stock: newStock,
+        isSoldOut: newStock <= 0
       });
-      setTimeout(() => setSavingId(null), 1500);
-    } catch {
+      setSavedId(product.id);
+      setTimeout(() => setSavedId((curr) => (curr === product.id ? null : curr)), 2000);
+    } catch (err: any) {
+      console.error('Failed to save stock in Firebase:', err);
+      setSaveError('Failed to save stock changes. Please try again.');
+    } finally {
       setSavingId(null);
     }
   };
@@ -54,6 +79,13 @@ export default function AdminStockTab({ products = [], onSaveProduct }: AdminSto
           Stock / Inventory
         </h2>
       </div>
+
+      {saveError && (
+        <div className="bg-red-50 border border-red-300 text-red-800 px-4 py-3 rounded-xl text-xs font-bold flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+          <span>{saveError}</span>
+        </div>
+      )}
 
       {/* Search Input */}
       <div className="relative max-w-sm">
@@ -83,9 +115,10 @@ export default function AdminStockTab({ products = [], onSaveProduct }: AdminSto
             </thead>
             <tbody className="divide-y divide-neutral-100 font-medium">
               {filteredProducts.map((prod) => {
-                const stock = stockMap[prod.id] ?? (prod as any).stock ?? 50;
-                const isSaved = savingId === prod.id;
-                const isOutOfStock = stock <= 0 || prod.isSoldOut;
+                const stock = stockMap[prod.id] ?? prod.stock ?? 50;
+                const isSavingThis = savingId === prod.id;
+                const isSaved = savedId === prod.id;
+                const isOutOfStock = stock <= 0;
                 const isLowStock = stock > 0 && stock <= 10;
 
                 return (
@@ -93,14 +126,7 @@ export default function AdminStockTab({ products = [], onSaveProduct }: AdminSto
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-lg bg-neutral-100 p-1 border border-neutral-200 shrink-0">
-                          {prod.image && (
-                            <img
-                              src={prod.image}
-                              alt=""
-                              referrerPolicy="no-referrer"
-                              className="w-full h-full object-contain"
-                            />
-                          )}
+                          <StockProductThumb src={prod.image} />
                         </div>
                         <div>
                           <span className="font-extrabold text-neutral-900 block truncate max-w-[200px]">
@@ -181,15 +207,16 @@ export default function AdminStockTab({ products = [], onSaveProduct }: AdminSto
                         </button>
                         <button
                           type="button"
+                          disabled={isSavingThis}
                           onClick={() => handleSaveStock(prod)}
-                          className={`px-3 py-1 text-xs font-black uppercase rounded transition-colors cursor-pointer flex items-center gap-1 ${
+                          className={`px-3 py-1 text-xs font-black uppercase rounded transition-colors cursor-pointer flex items-center gap-1 disabled:opacity-50 ${
                             isSaved
                               ? 'bg-emerald-500 text-white'
                               : 'bg-neutral-900 text-white hover:bg-neutral-800'
                           }`}
                         >
                           {isSaved ? <Check className="w-3 h-3" /> : <Save className="w-3 h-3" />}
-                          <span>{isSaved ? 'Saved' : 'Save'}</span>
+                          <span>{isSavingThis ? 'Saving...' : isSaved ? 'Saved' : 'Save'}</span>
                         </button>
                       </div>
                     </td>

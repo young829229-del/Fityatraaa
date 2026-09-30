@@ -644,76 +644,92 @@ export const PRODUCTS: Product[] = [
  * while preserving any edits made in the Admin Panel.
  */
 export function enrichProductWithDefaults(product: Product): Product {
-  const baseline = PRODUCTS.find((p) => p.id === product.id) || PRODUCTS[0];
+  const baseline = PRODUCTS.find((p) => p.id === product.id);
 
-  // Upgrade legacy promo banner if it still had old placeholder heading
-  const hasLegacyPromo =
-    !product.promotionalBanner ||
-    product.promotionalBanner.heading === 'BUILD MUSCLE FASTER WITH VERIFIED NUTRITION';
-
-  const promotionalBanner: PromotionalBannerConfig = hasLegacyPromo
-    ? baseline.promotionalBanner || DEFAULT_PROMO_BANNER
-    : {
+  const promotionalBanner: PromotionalBannerConfig = product.promotionalBanner
+    ? {
         ...DEFAULT_PROMO_BANNER,
-        ...product.promotionalBanner
-      };
+        ...(baseline?.promotionalBanner || {}),
+        ...product.promotionalBanner,
+        heading:
+          product.promotionalBanner.heading === 'BUILD MUSCLE FASTER WITH VERIFIED NUTRITION' &&
+          baseline?.promotionalBanner?.heading
+            ? baseline.promotionalBanner.heading
+            : product.promotionalBanner.heading ||
+              baseline?.promotionalBanner?.heading ||
+              DEFAULT_PROMO_BANNER.heading
+      }
+    : baseline?.promotionalBanner || DEFAULT_PROMO_BANNER;
 
   const activeGallery =
     product.gallery && product.gallery.length > 0
       ? product.gallery
       : product.image
       ? [product.image]
-      : baseline.gallery || [];
+      : baseline?.gallery || [];
+
+  const customScoopImages = (product.scoopSection?.images || []).filter(
+    (img): img is string => Boolean(img && !img.startsWith('/src/assets/'))
+  );
 
   const scoopSection: ScoopEditorialConfig = {
-    ...(baseline.scoopSection || DEFAULT_SCOOP_SECTION),
+    ...(baseline?.scoopSection || DEFAULT_SCOOP_SECTION),
     ...(product.scoopSection || {}),
     heading:
-      product.scoopSection?.heading ||
-      baseline.scoopSection?.heading ||
+      product.scoopSection?.heading ??
+      baseline?.scoopSection?.heading ??
       `In Every Scoop of ${product.id === 'wellcore-creatine' ? 'Wellcore Creatine' : product.name}`,
     description:
-      product.scoopSection?.description ||
-      baseline.scoopSection?.description ||
-      product.description ||
+      product.scoopSection?.description ??
+      baseline?.scoopSection?.description ??
+      product.description ??
       DEFAULT_SCOOP_SECTION.description,
     images:
-      activeGallery.length > 0
+      customScoopImages.length > 0
+        ? customScoopImages
+        : activeGallery.length > 0
         ? activeGallery.slice(0, 3)
-        : (product.scoopSection?.images || baseline.scoopSection?.images || [product.image]).filter(
-            (img) => img && !img.startsWith('/src/assets/')
+        : [product.image].filter(
+            (img): img is string => Boolean(img && !img.startsWith('/src/assets/'))
           )
   };
 
   const faqs: ProductFaqItem[] =
     product.faqs && product.faqs.length > 0
       ? product.faqs
-      : baseline.faqs || DEFAULT_PRODUCT_FAQS;
+      : baseline?.faqs || DEFAULT_PRODUCT_FAQS;
+
+  const customLeanImage =
+    product.leanPhysiqueSection?.image &&
+    !product.leanPhysiqueSection.image.startsWith('/src/assets/')
+      ? product.leanPhysiqueSection.image
+      : '';
 
   const leanPhysiqueSection: BuildPhysiqueConfig = {
     ...DEFAULT_LEAN_PHYSIQUE,
-    ...(baseline.leanPhysiqueSection || {}),
+    ...(baseline?.leanPhysiqueSection || {}),
     ...(product.leanPhysiqueSection || {}),
-    image:
-      product.image ||
-      (product.leanPhysiqueSection?.image &&
-      !product.leanPhysiqueSection.image.startsWith('/src/assets/')
-        ? product.leanPhysiqueSection.image
-        : DEFAULT_LEAN_PHYSIQUE.image)
+    image: customLeanImage || product.image || DEFAULT_LEAN_PHYSIQUE.image
   };
 
-  const deliveryInfo: DeliveryInfoConfig = product.deliveryInfo ||
-    baseline.deliveryInfo || {
-      ...DEFAULT_DELIVERY_INFO,
-      freeDeliveryText:
-        product.id === 'wellcore-creatine'
-          ? 'FREE Delivery on Wellcore Creatine'
-          : `Fast Tracked Delivery on ${product.brand || 'All Orders'}`
-    };
+  const deliveryInfo: DeliveryInfoConfig = product.deliveryInfo
+    ? {
+        ...DEFAULT_DELIVERY_INFO,
+        ...(baseline?.deliveryInfo || {}),
+        ...product.deliveryInfo
+      }
+    : baseline?.deliveryInfo || {
+        ...DEFAULT_DELIVERY_INFO,
+        freeDeliveryText:
+          product.id === 'wellcore-creatine'
+            ? 'FREE Delivery on Wellcore Creatine'
+            : `Fast Tracked Delivery on ${product.brand || 'All Orders'}`
+      };
 
-  // Ensure options include both Flavor and Variant for wellcore-creatine if legacy single-option was stored
-  let options = product.options;
+  // Preserve admin-edited options; only fall back to baseline if options was never set
+  let options = product.options !== undefined ? product.options : baseline?.options;
   if (
+    product.options === undefined &&
     product.id === 'wellcore-creatine' &&
     (!options || options.length < 2)
   ) {
@@ -762,11 +778,12 @@ export function enrichProductWithDefaults(product: Product): Product {
     pageSections.push({ ...relatedSec, id: 'sec-related' });
   }
 
-  return {
-    ...baseline,
+  const enriched: Product = {
+    ...(baseline || {}),
     ...product,
+    price: Number(product.price) || 0,
+    originalPrice: Number(product.originalPrice ?? product.price) || 0,
     pageSections,
-    options,
     promotionalBanner,
     scoopSection,
     faqs,
@@ -778,4 +795,12 @@ export function enrichProductWithDefaults(product: Product): Product {
     relatedHeading: product.relatedHeading || 'You May Also Like',
     relatedSubheading: product.relatedSubheading || 'Complete Your Gains.'
   };
+
+  if (options && options.length > 0) {
+    enriched.options = options;
+  } else {
+    delete enriched.options;
+  }
+
+  return enriched;
 }

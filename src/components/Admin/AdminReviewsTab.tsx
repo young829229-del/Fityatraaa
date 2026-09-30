@@ -63,6 +63,8 @@ export default function AdminReviewsTab({
   const [editingReview, setEditingReview] = useState<ReviewRecord | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
+  const [isSavingReview, setIsSavingReview] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Sort reviews by displayOrder ascending, then createdAt descending
   const sortedReviews = [...reviews].sort((a, b) => {
@@ -686,10 +688,19 @@ export default function AdminReviewsTab({
               />
             </div>
 
+            {saveError && (
+              <div className="bg-red-50 border border-red-300 text-red-800 px-3 py-2 rounded-lg text-xs font-bold">
+                {saveError}
+              </div>
+            )}
+
             <div className="flex items-center justify-end gap-2 pt-2 border-t">
               <button
                 type="button"
-                onClick={() => setEditingReview(null)}
+                onClick={() => {
+                  setSaveError(null);
+                  setEditingReview(null);
+                }}
                 className="px-3 py-2 text-xs font-bold text-neutral-600 cursor-pointer"
               >
                 Cancel
@@ -698,17 +709,26 @@ export default function AdminReviewsTab({
                 type="button"
                 onClick={async () => {
                   if (!editingReview.name.trim() || !editingReview.comment.trim()) return;
-                  await onSaveReview({
-                    ...editingReview,
-                    name: editingReview.name.trim(),
-                    comment: editingReview.comment.trim()
-                  });
-                  setEditingReview(null);
+                  setIsSavingReview(true);
+                  setSaveError(null);
+                  try {
+                    await onSaveReview({
+                      ...editingReview,
+                      name: editingReview.name.trim(),
+                      comment: editingReview.comment.trim()
+                    });
+                    setEditingReview(null);
+                  } catch (err: any) {
+                    console.error('Failed to save review to Firebase:', err);
+                    setSaveError('Failed to save changes. Please try again.');
+                  } finally {
+                    setIsSavingReview(false);
+                  }
                 }}
-                disabled={!editingReview.name.trim() || !editingReview.comment.trim()}
+                disabled={isSavingReview || !editingReview.name.trim() || !editingReview.comment.trim()}
                 className="px-4 py-2 bg-neutral-950 disabled:opacity-40 text-white text-xs font-black uppercase rounded-lg cursor-pointer"
               >
-                Save Review
+                {isSavingReview ? 'Saving...' : 'Save Review'}
               </button>
             </div>
           </div>

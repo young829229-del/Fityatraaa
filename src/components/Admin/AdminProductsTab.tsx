@@ -5,7 +5,9 @@ import {
   Upload,
   Loader2,
   X,
-  Image as ImageIcon
+  Image as ImageIcon,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 import { Product } from '../../types';
 import { uploadFileToStorage, useResolvedMediaUrl } from '../../services/storageService';
@@ -47,6 +49,7 @@ interface AdminProductsTabProps {
 const CATEGORY_OPTIONS = [
   'Creatine',
   'Protein',
+  'Muscle Building',
   'Collagen',
   'Pre-Workout',
   'Multivitamins',
@@ -67,6 +70,8 @@ export default function AdminProductsTab({
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccessBanner, setSaveSuccessBanner] = useState<string | null>(null);
 
   // Upload loading states for the 3 dropzones
   const [uploadingMain, setUploadingMain] = useState(false);
@@ -85,6 +90,7 @@ export default function AdminProductsTab({
   );
 
   const openEditorForProduct = (prod: Product) => {
+    setSaveError(null);
     const galleryList =
       prod.gallery && prod.gallery.length > 0
         ? prod.gallery
@@ -95,6 +101,7 @@ export default function AdminProductsTab({
 
     setEditingProduct({
       ...prod,
+      stock: typeof prod.stock === 'number' ? prod.stock : prod.isSoldOut ? 0 : 50,
       gallery: galleryList,
       detailBanners: bannersList
     });
@@ -133,6 +140,7 @@ export default function AdminProductsTab({
   const handleMainFiles = async (files: FileList | null) => {
     if (!files || files.length === 0 || !editingProduct) return;
     setUploadingMain(true);
+    setSaveError(null);
     try {
       const res = await uploadFileToStorage(files[0], `products/${editingProduct.id}/main`);
       if (res.url) {
@@ -150,6 +158,7 @@ export default function AdminProductsTab({
       }
     } catch (err) {
       console.error('Main image upload error:', err);
+      setSaveError('Failed to upload main image. Please try again.');
     } finally {
       setUploadingMain(false);
       if (mainInputRef.current) mainInputRef.current.value = '';
@@ -160,6 +169,7 @@ export default function AdminProductsTab({
   const handleGalleryFiles = async (files: FileList | null) => {
     if (!files || files.length === 0 || !editingProduct) return;
     setUploadingGallery(true);
+    setSaveError(null);
     try {
       const uploadedUrls: string[] = [];
       for (let i = 0; i < files.length; i++) {
@@ -180,6 +190,7 @@ export default function AdminProductsTab({
       }
     } catch (err) {
       console.error('Gallery upload error:', err);
+      setSaveError('Failed to upload gallery image(s). Please try again.');
     } finally {
       setUploadingGallery(false);
       if (galleryInputRef.current) galleryInputRef.current.value = '';
@@ -190,6 +201,7 @@ export default function AdminProductsTab({
   const handleBannerFiles = async (files: FileList | null) => {
     if (!files || files.length === 0 || !editingProduct) return;
     setUploadingBanners(true);
+    setSaveError(null);
     try {
       const uploadedUrls: string[] = [];
       for (let i = 0; i < files.length; i++) {
@@ -204,6 +216,7 @@ export default function AdminProductsTab({
       }
     } catch (err) {
       console.error('Detail banner upload error:', err);
+      setSaveError('Failed to upload detail banner(s). Please try again.');
     } finally {
       setUploadingBanners(false);
       if (bannersInputRef.current) bannersInputRef.current.value = '';
@@ -223,22 +236,40 @@ export default function AdminProductsTab({
 
   const handleSaveSpecifications = async () => {
     if (!editingProduct) return;
+    const trimmedName = (editingProduct.name || '').trim();
+    if (!trimmedName) {
+      setSaveError('Supplement name is required.');
+      return;
+    }
+
     setIsSaving(true);
+    setSaveError(null);
     try {
-      const galleryList = editingProduct.gallery || [];
-      const bannersList = editingProduct.detailBanners || [];
+      const galleryList = (editingProduct.gallery || []).filter(Boolean);
+      const bannersList = (editingProduct.detailBanners || []).filter(Boolean);
+      const cleanPrice = Math.max(0, Number(editingProduct.price) || 0);
+      const cleanOrigPrice = Math.max(
+        0,
+        Number(editingProduct.originalPrice ?? cleanPrice) || cleanPrice
+      );
+      const cleanStock = editingProduct.isSoldOut
+        ? 0
+        : Math.max(1, Number(editingProduct.stock ?? 50) || 50);
 
       const discountPercentage =
-        editingProduct.originalPrice > editingProduct.price
-          ? Math.round(
-              ((editingProduct.originalPrice - editingProduct.price) /
-                editingProduct.originalPrice) *
-                100
-            )
+        cleanOrigPrice > cleanPrice
+          ? Math.round(((cleanOrigPrice - cleanPrice) / cleanOrigPrice) * 100)
           : 0;
 
       const finalProduct: Product = {
         ...editingProduct,
+        name: trimmedName,
+        brand: (editingProduct.brand || 'FitYatra').trim(),
+        category: (editingProduct.category || 'Supplements').trim(),
+        price: cleanPrice,
+        originalPrice: cleanOrigPrice,
+        stock: cleanStock,
+        isSoldOut: Boolean(editingProduct.isSoldOut) || cleanStock <= 0,
         image: editingProduct.image || galleryList[0] || '',
         gallery:
           galleryList.length > 0
@@ -248,12 +279,21 @@ export default function AdminProductsTab({
             : [],
         detailBanners: bannersList,
         discountPercentage,
-        badgeType: editingProduct.isSoldOut ? 'soldout' : 'sale',
-        stock: editingProduct.isSoldOut ? 0 : Math.max(1, editingProduct.stock ?? 50)
+        badgeType: editingProduct.isSoldOut || cleanStock <= 0 ? 'soldout' : 'sale'
       };
 
       await onSaveProduct(finalProduct);
       setEditingProduct(null);
+      setSaveSuccessBanner(`Saved "${finalProduct.name}" to Firebase successfully.`);
+      setTimeout(() => setSaveSuccessBanner(null), 4000);
+    } catch (err: any) {
+      console.error('Failed to save product specifications to Firebase:', err);
+      let msg = err?.message || 'Failed to save changes. Please try again.';
+      try {
+        const parsed = JSON.parse(msg);
+        if (parsed?.error) msg = `Failed to save changes: ${parsed.error}`;
+      } catch {}
+      setSaveError(msg);
     } finally {
       setIsSaving(false);
     }
@@ -284,6 +324,23 @@ export default function AdminProductsTab({
           <span>NEW SUPPLEMENT</span>
         </button>
       </div>
+
+      {/* Firebase Save Confirmation Toast */}
+      {saveSuccessBanner && (
+        <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 px-4 py-3 rounded-xl text-xs font-bold flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{saveSuccessBanner}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSaveSuccessBanner(null)}
+            className="text-emerald-700 hover:text-emerald-950 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Search Bar */}
       <div className="relative w-full sm:max-w-md">
@@ -351,8 +408,14 @@ export default function AdminProductsTab({
                 <button
                   type="button"
                   onClick={async () => {
-                    await onDeleteProduct(product.id);
-                    setConfirmDeleteId(null);
+                    try {
+                      await onDeleteProduct(product.id);
+                      setConfirmDeleteId(null);
+                      setSaveSuccessBanner('Supplement deleted from Firebase.');
+                      setTimeout(() => setSaveSuccessBanner(null), 3000);
+                    } catch (err) {
+                      console.error('Delete product failed:', err);
+                    }
                   }}
                   className="border border-red-600 bg-red-600 text-white text-[10px] font-black uppercase tracking-wider px-3 sm:px-3.5 py-1.5 rounded cursor-pointer"
                 >
@@ -464,11 +527,12 @@ export default function AdminProductsTab({
                   </label>
                   <input
                     type="number"
+                    min={0}
                     value={editingProduct.price}
                     onChange={(e) =>
                       setEditingProduct({
                         ...editingProduct,
-                        price: Number(e.target.value)
+                        price: e.target.value === '' ? 0 : Number(e.target.value)
                       })
                     }
                     className="w-full bg-[#FAFAFA] border border-[#FDE047] rounded-lg px-3.5 py-2.5 text-sm font-bold text-neutral-900 focus:outline-none focus:border-[#EAB308]"
@@ -481,11 +545,12 @@ export default function AdminProductsTab({
                   </label>
                   <input
                     type="number"
+                    min={0}
                     value={editingProduct.originalPrice}
                     onChange={(e) =>
                       setEditingProduct({
                         ...editingProduct,
-                        originalPrice: Number(e.target.value)
+                        originalPrice: e.target.value === '' ? 0 : Number(e.target.value)
                       })
                     }
                     className="w-full bg-[#FAFAFA] border border-neutral-200 rounded-lg px-3.5 py-2.5 text-sm text-neutral-600 focus:outline-none focus:border-[#EAB308]"
@@ -524,6 +589,59 @@ export default function AdminProductsTab({
                     className="w-full bg-[#FAFAFA] border border-neutral-200 rounded-lg px-3.5 py-2.5 text-sm text-neutral-900 focus:outline-none focus:border-[#EAB308]"
                   />
                 </div>
+              </div>
+
+              {/* Row 4b: STOCK QUANTITY + PRODUCT DESCRIPTION */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block mb-1.5">
+                    STOCK QUANTITY
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editingProduct.stock ?? 50}
+                    onChange={(e) => {
+                      const nextStock = e.target.value === '' ? 0 : Math.max(0, Number(e.target.value));
+                      setEditingProduct({
+                        ...editingProduct,
+                        stock: nextStock,
+                        isSoldOut: nextStock <= 0
+                      });
+                    }}
+                    className="w-full bg-[#FAFAFA] border border-neutral-200 rounded-lg px-3.5 py-2.5 text-sm text-neutral-900 focus:outline-none focus:border-[#EAB308]"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block mb-1.5">
+                    SHORT TAGLINE / SUBTITLE
+                  </label>
+                  <input
+                    type="text"
+                    value={editingProduct.tagline || ''}
+                    onChange={(e) =>
+                      setEditingProduct({ ...editingProduct, tagline: e.target.value })
+                    }
+                    placeholder="e.g. Recover faster. Lift heavier."
+                    className="w-full bg-[#FAFAFA] border border-neutral-200 rounded-lg px-3.5 py-2.5 text-sm text-neutral-900 focus:outline-none focus:border-[#EAB308]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block mb-1.5">
+                  PRODUCT DESCRIPTION
+                </label>
+                <textarea
+                  rows={3}
+                  value={editingProduct.description || ''}
+                  onChange={(e) =>
+                    setEditingProduct({ ...editingProduct, description: e.target.value })
+                  }
+                  placeholder="Enter product description..."
+                  className="w-full bg-[#FAFAFA] border border-neutral-200 rounded-lg px-3.5 py-2.5 text-sm text-neutral-900 focus:outline-none focus:border-[#EAB308]"
+                />
               </div>
 
               {/* Block 5: MAIN SUPPLEMENT IMAGE (SINGLE PHOTO) */}
@@ -744,18 +862,28 @@ export default function AdminProductsTab({
                 </label>
                 <select
                   value={editingProduct.isSoldOut ? 'soldout' : 'instock'}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const soldOut = e.target.value === 'soldout';
                     setEditingProduct({
                       ...editingProduct,
-                      isSoldOut: e.target.value === 'soldout'
-                    })
-                  }
+                      isSoldOut: soldOut,
+                      stock: soldOut ? 0 : Math.max(1, editingProduct.stock || 50)
+                    });
+                  }}
                   className="w-full bg-[#FAFAFA] border border-neutral-200 rounded-lg px-3.5 py-2.5 text-sm font-bold text-neutral-900 focus:outline-none focus:border-[#EAB308]"
                 >
                   <option value="instock">In Stock (Enable Add to Cart)</option>
                   <option value="soldout">Sold Out (Disable Add to Cart)</option>
                 </select>
               </div>
+
+              {/* Error Banner if Save Fails */}
+              {saveError && (
+                <div className="bg-red-50 border border-red-300 text-red-800 px-4 py-3 rounded-xl text-xs font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                  <span>{saveError}</span>
+                </div>
+              )}
 
               {/* Bottom Action Buttons (Mobile & Desktop friendly) */}
               <div className="pt-4 pb-8 flex items-center gap-3 sm:gap-4 border-t border-neutral-100">
@@ -770,7 +898,7 @@ export default function AdminProductsTab({
                 <button
                   type="button"
                   onClick={handleSaveSpecifications}
-                  disabled={isSaving}
+                  disabled={isSaving || uploadingMain || uploadingGallery || uploadingBanners}
                   className="flex-[1.35] bg-black hover:bg-neutral-900 disabled:opacity-50 text-white font-black text-[11px] uppercase tracking-wider py-3.5 rounded-lg transition-colors cursor-pointer"
                 >
                   {isSaving ? 'SAVING...' : 'SAVE SPECIFICATIONS'}

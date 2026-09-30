@@ -77,6 +77,7 @@ export default function AdminBannersTab({
   const [uploadingMainVideo, setUploadingMainVideo] = useState<boolean>(false);
   const [mainVideoProgress, setMainVideoProgress] = useState<number>(0);
   const [mainVideoSaved, setMainVideoSaved] = useState<boolean>(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const mainVideoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -140,15 +141,21 @@ export default function AdminBannersTab({
 
   const handleSaveMainVideoSettings = async () => {
     if (!onUpdateStoreSettings) return;
-    await onUpdateStoreSettings({
-      announcementText: announcementText.trim() || 'Make Health Better Again',
-      redefineVideoUrl: videoUrl,
-      redefineVideoPosterUrl: videoPosterUrl,
-      redefineVideoHeading: videoHeading,
-      redefineVideoEnabled: videoEnabled
-    });
-    setMainVideoSaved(true);
-    setTimeout(() => setMainVideoSaved(false), 2500);
+    setSaveError(null);
+    try {
+      await onUpdateStoreSettings({
+        announcementText: announcementText.trim() || 'Make Health Better Again',
+        redefineVideoUrl: videoUrl,
+        redefineVideoPosterUrl: videoPosterUrl,
+        redefineVideoHeading: videoHeading,
+        redefineVideoEnabled: videoEnabled
+      });
+      setMainVideoSaved(true);
+      setTimeout(() => setMainVideoSaved(false), 2500);
+    } catch (err: any) {
+      console.error('Failed to save store settings to Firebase:', err);
+      setSaveError('Failed to save changes. Please try again.');
+    }
   };
 
   const handleUpdate = (id: string, field: keyof StoreBanner, value: any) => {
@@ -158,9 +165,15 @@ export default function AdminBannersTab({
   };
 
   const handleSave = async (banner: StoreBanner) => {
-    await onSaveBanner(banner);
-    setSavedBannerId(banner.id);
-    setTimeout(() => setSavedBannerId(null), 2500);
+    setSaveError(null);
+    try {
+      await onSaveBanner(banner);
+      setSavedBannerId(banner.id);
+      setTimeout(() => setSavedBannerId(null), 2500);
+    } catch (err: any) {
+      console.error('Failed to save banner to Firebase:', err);
+      setSaveError('Failed to save changes. Please try again.');
+    }
   };
 
   const handleMoveOrder = async (index: number, direction: 'up' | 'down') => {
@@ -211,6 +224,11 @@ export default function AdminBannersTab({
 
   return (
     <div className="space-y-6">
+      {saveError && (
+        <div className="bg-red-50 border border-red-300 text-red-800 px-4 py-3 rounded-xl text-xs font-bold">
+          {saveError}
+        </div>
+      )}
       {/* 1. HOMEPAGE "MODIFY / REDEFINE YOURSELF" VIDEO MANAGER */}
       <div className="bg-white rounded-2xl border-2 border-neutral-900 shadow-xs p-5 space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-200 pb-4">

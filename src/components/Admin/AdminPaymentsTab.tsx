@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CreditCard, QrCode, Plus, Save, Trash2, Check, AlertCircle } from 'lucide-react';
 import { PaymentMethodSetting } from '../../types';
 import ImageUploader from './ImageUploader';
@@ -16,11 +16,12 @@ export default function AdminPaymentsTab({
 }: AdminPaymentsTabProps) {
   const [editingSettings, setEditingSettings] = useState<PaymentMethodSetting[]>(paymentSettings);
   const [savedSuccessId, setSavedSuccessId] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  // Sync state if prop changes
-  if (paymentSettings.length > 0 && editingSettings.length === 0) {
+  useEffect(() => {
     setEditingSettings(paymentSettings);
-  }
+  }, [paymentSettings]);
 
   const handleUpdateField = (id: string, field: keyof PaymentMethodSetting, value: any) => {
     setEditingSettings((prev) =>
@@ -29,9 +30,18 @@ export default function AdminPaymentsTab({
   };
 
   const handleSaveItem = async (setting: PaymentMethodSetting) => {
-    await onSaveSetting(setting);
-    setSavedSuccessId(setting.id);
-    setTimeout(() => setSavedSuccessId(null), 2500);
+    setSavingId(setting.id);
+    setSaveError(null);
+    try {
+      await onSaveSetting(setting);
+      setSavedSuccessId(setting.id);
+      setTimeout(() => setSavedSuccessId((curr) => (curr === setting.id ? null : curr)), 2500);
+    } catch (err: any) {
+      console.error('Failed to save payment setting to Firebase:', err);
+      setSaveError('Failed to save changes. Please try again.');
+    } finally {
+      setSavingId(null);
+    }
   };
 
   const handleAddNewMethod = () => {
@@ -68,10 +78,18 @@ export default function AdminPaymentsTab({
         </button>
       </div>
 
+      {saveError && (
+        <div className="bg-red-50 border border-red-300 text-red-800 px-4 py-3 rounded-xl text-xs font-bold flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+          <span>{saveError}</span>
+        </div>
+      )}
+
       {/* Payment Methods Cards Grid */}
       <div className="space-y-4">
         {editingSettings.map((method) => {
           const isSaved = savedSuccessId === method.id;
+          const isSavingThis = savingId === method.id;
 
           return (
             <div

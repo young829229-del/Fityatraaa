@@ -39,6 +39,34 @@ let hasSeededProducts = false;
 let hasSeededReviews = false;
 let hasSeededBanners = false;
 
+/**
+ * Recursively removes `undefined` fields and replaces `NaN` numbers with `0`
+ * so Firebase Firestore `setDoc` / `updateDoc` never fails with "Unsupported field value: undefined".
+ */
+function stripUndefinedDeep<T>(value: T): T {
+  if (value === undefined) {
+    return null as unknown as T;
+  }
+  if (typeof value === 'number' && Number.isNaN(value)) {
+    return 0 as unknown as T;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .filter((item) => item !== undefined)
+      .map((item) => stripUndefinedDeep(item)) as unknown as T;
+  }
+  if (value !== null && typeof value === 'object') {
+    const cleaned: Record<string, any> = {};
+    for (const [k, v] of Object.entries(value as Record<string, any>)) {
+      if (v !== undefined) {
+        cleaned[k] = stripUndefinedDeep(v);
+      }
+    }
+    return cleaned as T;
+  }
+  return value;
+}
+
 const DEFAULT_REDEFINE_VIDEO_URL =
   'https://res.cloudinary.com/drefcs4o2/video/upload/v1772786558/AQN7bb300k16e4a823562133089a70f6f743831e4d4d139d09c4409986d60900c7026444233380473110008057761_1_fd9n1h.mp4';
 const DEFAULT_REDEFINE_POSTER_URL =
@@ -62,9 +90,13 @@ export function subscribeToProducts(callback: (products: Product[]) => void): ()
             callback(INITIAL_PRODUCTS.map((p) => enrichProductWithDefaults(p)));
           }
         } else {
-          const products = snapshot.docs.map((docSnap) =>
-            enrichProductWithDefaults(docSnap.data() as Product)
-          );
+          const products = snapshot.docs.map((docSnap) => {
+            const raw = docSnap.data() as Product;
+            return enrichProductWithDefaults({
+              ...raw,
+              id: docSnap.id
+            });
+          });
           callback(products);
         }
       },
@@ -84,7 +116,13 @@ export async function getProductsFromFirestore(): Promise<Product[]> {
     if (snap.empty) {
       return await seedInitialProductsIfEmpty();
     }
-    return snap.docs.map((docSnap) => enrichProductWithDefaults(docSnap.data() as Product));
+    return snap.docs.map((docSnap) => {
+      const raw = docSnap.data() as Product;
+      return enrichProductWithDefaults({
+        ...raw,
+        id: docSnap.id
+      });
+    });
   } catch (error) {
     console.warn('Fetching products from Firestore notice:', error);
     return INITIAL_PRODUCTS;
@@ -123,32 +161,44 @@ export async function seedInitialProductsIfEmpty(): Promise<Product[]> {
 }
 
 export async function saveProductToFirestore(product: Product): Promise<void> {
-  const path = `${PRODUCTS_COLLECTION}/${product.id}`;
+  const docId = (product.id || '').trim();
+  const path = `${PRODUCTS_COLLECTION}/${docId}`;
+  if (!docId) {
+    throw new Error('Cannot save product: missing product ID.');
+  }
   try {
-    const stockVal = typeof product.stock === 'number' ? Math.max(0, product.stock) : 50;
-    const isSoldOutVal = stockVal <= 0 ? true : Boolean(product.isSoldOut);
+    const cleanPrice = Math.max(0, Number(product.price) || 0);
+    const cleanOrigPrice = Math.max(0, Number(product.originalPrice ?? cleanPrice) || cleanPrice);
+    const rawStock = typeof product.stock === 'number' && !Number.isNaN(product.stock) ? product.stock : 50;
+    const isSoldOutVal = Boolean(product.isSoldOut) || rawStock <= 0;
+    const stockVal = isSoldOutVal ? 0 : Math.max(1, rawStock);
     const discountPct =
-      product.originalPrice > product.price
-        ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
+      cleanOrigPrice > cleanPrice
+        ? Math.round(((cleanOrigPrice - cleanPrice) / cleanOrigPrice) * 100)
         : 0;
 
-    await setDoc(
-      doc(db, PRODUCTS_COLLECTION, product.id),
-      {
-        ...product,
-        stock: stockVal,
-        isSoldOut: isSoldOutVal,
-        badgeType: isSoldOutVal ? 'soldout' : 'sale',
-        discountPercentage: discountPct,
-        updatedAt: new Date().toISOString()
-      },
-      { merge: true }
-    );
+    const payload = stripUndefinedDeep({
+      ...product,
+      id: docId,
+      name: (product.name || 'Supplement').trim(),
+      brand: (product.brand || 'FitYatra').trim(),
+      category: (product.category || 'Supplements').trim(),
+      price: cleanPrice,
+      originalPrice: cleanOrigPrice,
+      stock: stockVal,
+      isSoldOut: isSoldOutVal,
+      badgeType: isSoldOutVal ? 'soldout' : 'sale',
+      discountPercentage: discountPct,
+      updatedAt: new Date().toISOString()
+    });
+
+    await setDoc(doc(db, PRODUCTS_COLLECTION, docId), payload, { merge: true });
     await logAdminActivity(
       'Product Saved',
-      `Updated ${product.name} — Price: Rs ${product.price}, Stock: ${stockVal}`
+      `Updated ${payload.name} — Price: Rs ${cleanPrice}, Stock: ${stockVal}`
     );
   } catch (error) {
+    console.error('saveProductToFirestore failed:', error);
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
@@ -173,7 +223,10 @@ export function subscribeToOrders(callback: (orders: Order[]) => void): () => vo
     return onSnapshot(
       q,
       (snapshot) => {
-        const orders = snapshot.docs.map((d) => d.data() as Order);
+        const orders = snapshot.docs.map((d) => ({
+          ...(d.data() as Order),
+          id: d.id
+        }));
         callback(orders);
       },
       (error) => {
@@ -349,7 +402,10 @@ export function subscribeToReviews(callback: (reviews: ReviewRecord[]) => void):
           hasSeededReviews = true;
           seedBaselineReviews().then(callback);
         } else {
-          const reviews = snapshot.docs.map((d) => d.data() as ReviewRecord);
+          const reviews = snapshot.docs.map((d) => ({
+            ...(d.data() as ReviewRecord),
+            id: d.id
+          }));
           reviews.sort((a, b) => {
             const orderA = typeof a.displayOrder === 'number' ? a.displayOrder : 9999;
             const orderB = typeof b.displayOrder === 'number' ? b.displayOrder : 9999;
@@ -473,14 +529,23 @@ export async function seedBaselineReviews(): Promise<ReviewRecord[]> {
 }
 
 export async function saveReviewToFirestore(review: ReviewRecord): Promise<void> {
-  const path = `${REVIEWS_COLLECTION}/${review.id}`;
+  const docId = (review.id || '').trim();
+  const path = `${REVIEWS_COLLECTION}/${docId}`;
   try {
-    await setDoc(doc(db, REVIEWS_COLLECTION, review.id), review, { merge: true });
+    const payload = stripUndefinedDeep({
+      ...review,
+      id: docId,
+      name: (review.name || 'Verified Customer').trim(),
+      rating: Math.max(1, Math.min(5, Number(review.rating) || 5)),
+      comment: (review.comment || '').trim()
+    });
+    await setDoc(doc(db, REVIEWS_COLLECTION, docId), payload, { merge: true });
     await logAdminActivity(
       'Review Updated',
-      `Review by ${review.name} (${review.rating}★) — Status: ${review.status}, Featured: ${Boolean(review.isFeatured)}`
+      `Review by ${payload.name} (${payload.rating}★) — Status: ${payload.status}, Featured: ${Boolean(payload.isFeatured)}`
     );
   } catch (error) {
+    console.error('saveReviewToFirestore failed:', error);
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
@@ -508,7 +573,10 @@ export function subscribeToPaymentSettings(callback: (methods: PaymentMethodSett
         if (snapshot.empty) {
           seedBaselinePaymentSettings().then(callback);
         } else {
-          const list = snapshot.docs.map((d) => d.data() as PaymentMethodSetting);
+          const list = snapshot.docs.map((d) => ({
+            ...(d.data() as PaymentMethodSetting),
+            id: d.id
+          }));
           list.sort((a, b) => a.displayOrder - b.displayOrder);
           callback(list);
         }
@@ -576,11 +644,17 @@ export async function seedBaselinePaymentSettings(): Promise<PaymentMethodSettin
 }
 
 export async function savePaymentSettingToFirestore(setting: PaymentMethodSetting): Promise<void> {
-  const path = `${PAYMENT_SETTINGS_COLLECTION}/${setting.id}`;
+  const docId = (setting.id || '').trim();
+  const path = `${PAYMENT_SETTINGS_COLLECTION}/${docId}`;
   try {
-    await setDoc(doc(db, PAYMENT_SETTINGS_COLLECTION, setting.id), setting, { merge: true });
+    const payload = stripUndefinedDeep({
+      ...setting,
+      id: docId
+    });
+    await setDoc(doc(db, PAYMENT_SETTINGS_COLLECTION, docId), payload, { merge: true });
     await logAdminActivity('Payment Method Updated', `Updated payment method ${setting.name}`);
   } catch (error) {
+    console.error('savePaymentSettingToFirestore failed:', error);
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
@@ -628,7 +702,10 @@ export function subscribeToBanners(callback: (banners: StoreBanner[]) => void): 
             callback([defaultHero]);
           }
         } else {
-          const banners = snapshot.docs.map((d) => d.data() as StoreBanner);
+          const banners = snapshot.docs.map((d) => ({
+            ...(d.data() as StoreBanner),
+            id: d.id
+          }));
           banners.sort((a, b) => (a.displayOrder || 1) - (b.displayOrder || 1));
           callback(banners);
         }
@@ -644,11 +721,17 @@ export function subscribeToBanners(callback: (banners: StoreBanner[]) => void): 
 }
 
 export async function saveBannerToFirestore(banner: StoreBanner): Promise<void> {
-  const path = `${BANNERS_COLLECTION}/${banner.id}`;
+  const docId = (banner.id || '').trim();
+  const path = `${BANNERS_COLLECTION}/${docId}`;
   try {
-    await setDoc(doc(db, BANNERS_COLLECTION, banner.id), banner, { merge: true });
+    const payload = stripUndefinedDeep({
+      ...banner,
+      id: docId
+    });
+    await setDoc(doc(db, BANNERS_COLLECTION, docId), payload, { merge: true });
     await logAdminActivity('Banner Updated', `Saved banner ${banner.title}`);
   } catch (error) {
+    console.error('saveBannerToFirestore failed:', error);
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
@@ -724,9 +807,14 @@ export function subscribeToStoreSettings(callback: (settings: StoreSettings) => 
 export async function updateStoreSettingsInFirestore(updates: Partial<StoreSettings>): Promise<void> {
   const path = `${STORE_SETTINGS_COLLECTION}/general`;
   try {
-    await setDoc(doc(db, STORE_SETTINGS_COLLECTION, 'general'), updates, { merge: true });
+    const payload = stripUndefinedDeep({
+      ...updates,
+      id: 'general'
+    });
+    await setDoc(doc(db, STORE_SETTINGS_COLLECTION, 'general'), payload, { merge: true });
     await logAdminActivity('Store Settings Updated', `Updated store operational configuration`);
   } catch (error) {
+    console.error('updateStoreSettingsInFirestore failed:', error);
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
@@ -816,7 +904,10 @@ export function subscribeToContactSubmissions(
     return onSnapshot(
       q,
       (snapshot) => {
-        const list = snapshot.docs.map((d) => d.data() as ContactSubmission);
+        const list = snapshot.docs.map((d) => ({
+          ...(d.data() as ContactSubmission),
+          id: d.id
+        }));
         list.sort(
           (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         );
@@ -891,7 +982,10 @@ export function subscribeToEmailSubscribers(
     return onSnapshot(
       q,
       (snapshot) => {
-        const list = snapshot.docs.map((d) => d.data() as EmailSubscriber);
+        const list = snapshot.docs.map((d) => ({
+          ...(d.data() as EmailSubscriber),
+          id: d.id
+        }));
         list.sort(
           (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         );
