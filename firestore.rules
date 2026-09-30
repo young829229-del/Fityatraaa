@@ -67,83 +67,85 @@ service cloud.firestore {
              data.email is string && data.email.size() > 0 && data.email.size() <= 160;
     }
 
-    // 1. Products Collection
+    // 1. Products Collection (Public Read, Admin Write)
     match /products/{productId} {
       allow get, list: if true;
-      allow create, update: if isValidId(productId) && isValidProduct(incoming());
-      allow delete: if isValidId(productId);
+      allow create, update: if isAdmin() && isValidId(productId) && isValidProduct(incoming());
+      allow delete: if isAdmin() && isValidId(productId);
     }
 
-    // 2. Orders Collection
+    // 2. Orders Collection (Public Create at Checkout, Admin Read/Update/Delete)
     match /orders/{orderId} {
-      allow get, list: if true;
+      allow get, list: if isAdmin();
       allow create: if isValidId(orderId) && isValidOrder(incoming());
-      allow update, delete: if isValidId(orderId);
+      allow update, delete: if isAdmin() && isValidId(orderId);
     }
 
-    // 3. Customer Reviews Collection
+    // 3. Customer Reviews Collection (Public Read & Create, Admin Moderate/Delete)
     match /reviews/{reviewId} {
       allow get, list: if true;
       allow create: if isValidId(reviewId) && isValidReview(incoming());
-      allow update, delete: if isValidId(reviewId);
+      allow update, delete: if isAdmin() && isValidId(reviewId);
     }
 
-    // 4. Payment Settings Collection
+    // 4. Payment Settings Collection (Public Read, Admin Write)
     match /payment_settings/{paymentId} {
       allow get, list: if true;
-      allow create, update, delete: if isValidId(paymentId);
+      allow create, update, delete: if isAdmin() && isValidId(paymentId);
     }
 
-    // 5. Promotional Banners Collection
+    // 5. Promotional Banners Collection (Public Read, Admin Write)
     match /banners/{bannerId} {
       allow get, list: if true;
-      allow create, update, delete: if isValidId(bannerId);
+      allow create, update, delete: if isAdmin() && isValidId(bannerId);
     }
 
-    // 6. Store Settings Collection (open for order, announcement, etc)
+    // 6. Store Settings Collection (Public Read, Admin Write)
     match /store_settings/{settingId} {
       allow get, list: if true;
-      allow create, update, delete: if isValidId(settingId);
+      allow create, update, delete: if isAdmin() && isValidId(settingId);
     }
 
-    // 7. Admin Activity Log Collection
+    // 7. Admin Activity Log Collection (Admin Only)
     match /admin_activity/{activityId} {
-      allow get, list: if true;
-      allow create, update, delete: if isValidId(activityId);
+      allow get, list: if isAdmin();
+      allow create, update, delete: if isAdmin() && isValidId(activityId);
     }
 
-    // 8. Contact Submissions Collection
+    // 8. Contact Submissions Collection (Public Create, Admin Read/Update/Delete)
     match /contact_submissions/{submissionId} {
-      allow get, list: if true;
+      allow get, list: if isAdmin();
       allow create: if isValidId(submissionId) && isValidContactSubmission(incoming());
-      allow update, delete: if isValidId(submissionId);
+      allow update, delete: if isAdmin() && isValidId(submissionId);
     }
 
-    // 9. Email Subscribers Collection
+    // 9. Email Subscribers Collection (Public Create, Admin Read/Update/Delete)
     match /email_subscribers/{subscriberId} {
-      allow get, list: if true;
+      allow get, list: if isAdmin();
       allow create: if isValidId(subscriberId) && isValidEmailSubscriber(incoming());
-      allow update, delete: if isValidId(subscriberId);
+      allow update, delete: if isAdmin() && isValidId(subscriberId);
     }
 
-    // 10. Uploaded Media Files & Chunks (Videos & Images)
+    // 10. Uploaded Media Files & Chunks (Public Read for Storefront Display, Create for Uploads, Admin Update/Delete)
     match /media_files/{mediaId} {
       allow get, list: if true;
-      allow create, update, delete: if isValidId(mediaId);
+      allow create: if isValidId(mediaId);
+      allow update, delete: if isAdmin() && isValidId(mediaId);
     }
 
     match /media_chunks/{chunkId} {
       allow get, list: if true;
-      allow create, update, delete: if isValidId(chunkId);
+      allow create: if isValidId(chunkId);
+      allow update, delete: if isAdmin() && isValidId(chunkId);
     }
 
     // 11. Admin Users Collection
     match /admins/{userId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list, write: if isAdmin();
     }
 
-    // 11. Test Collection (for connectivity check)
+    // 12. Test Collection (for connectivity check)
     match /test/{testId} {
       allow get: if true;
     }

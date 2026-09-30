@@ -12,7 +12,28 @@ import {
   RefreshCw,
   GripVertical
 } from 'lucide-react';
-import { uploadFileToStorage } from '../../services/storageService';
+import { uploadFileToStorage, useResolvedMediaUrl } from '../../services/storageService';
+
+function ResolvedUploadImg({
+  src,
+  alt,
+  className
+}: {
+  src: string;
+  alt: string;
+  className?: string;
+}) {
+  const resolved = useResolvedMediaUrl(src);
+  if (!resolved) return <div className="w-full h-full bg-neutral-100 animate-pulse" />;
+  return (
+    <img
+      src={resolved}
+      alt={alt}
+      referrerPolicy="no-referrer"
+      className={className}
+    />
+  );
+}
 
 interface ImageUploaderProps {
   label?: string;
@@ -271,10 +292,9 @@ export default function ImageUploader({
                 : 'border-neutral-300'
             } ${multiple && images.length > 1 ? 'cursor-grab active:cursor-grabbing' : ''}`}
           >
-            <img
+            <ResolvedUploadImg
               src={url}
               alt={`Asset ${idx + 1}`}
-              referrerPolicy="no-referrer"
               className="w-full h-full object-contain p-1 pointer-events-none"
             />
 
@@ -405,10 +425,9 @@ export default function ImageUploader({
             >
               <X className="w-4 h-4" />
             </button>
-            <img
+            <ResolvedUploadImg
               src={previewUrl}
               alt="Preview"
-              referrerPolicy="no-referrer"
               className="w-full h-auto max-h-[82vh] object-contain rounded-xl"
             />
           </div>

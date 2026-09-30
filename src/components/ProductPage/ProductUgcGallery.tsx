@@ -1,6 +1,20 @@
-import { useState, useRef, TouchEvent } from 'react';
+import { useState, TouchEvent } from 'react';
 import { ChevronLeft, ChevronRight, UserCheck } from 'lucide-react';
 import { CustomerUGCImage } from '../../types';
+import { useResolvedMediaUrl } from '../../services/storageService';
+
+function ResolvedUgcImg({ src, alt }: { src: string; alt: string }) {
+  const resolved = useResolvedMediaUrl(src);
+  if (!resolved) return <div className="w-full h-full bg-neutral-200 animate-pulse" />;
+  return (
+    <img
+      src={resolved}
+      alt={alt}
+      referrerPolicy="no-referrer"
+      className="w-full h-full object-cover"
+    />
+  );
+}
 
 interface ProductUgcGalleryProps {
   images?: CustomerUGCImage[];
@@ -69,22 +83,18 @@ export default function ProductUgcGallery({ images = [] }: ProductUgcGalleryProp
               onClick={handlePrev}
               className="w-20 sm:w-36 h-44 sm:h-64 rounded-3xl overflow-hidden bg-neutral-100 shadow-md opacity-60 hover:opacity-90 transition-all cursor-pointer shrink-0 scale-95"
             >
-              <img
+              <ResolvedUgcImg
                 src={prevImg.url}
                 alt={prevImg.caption || 'Customer review'}
-                referrerPolicy="no-referrer"
-                className="w-full h-full object-cover"
               />
             </div>
           )}
 
           {/* Main Large Center Customer Image */}
           <div className="w-48 sm:w-64 h-60 sm:h-80 rounded-3xl overflow-hidden shadow-2xl border-2 border-neutral-900 bg-neutral-900 shrink-0 relative transition-transform duration-300">
-            <img
+            <ResolvedUgcImg
               src={current.url}
               alt={current.caption || 'Customer result'}
-              referrerPolicy="no-referrer"
-              className="w-full h-full object-cover"
             />
             {current.customerName && (
               <div className="absolute bottom-3 left-3 right-3 bg-neutral-900/85 backdrop-blur-xs text-white p-2 rounded-xl text-left">
@@ -107,11 +117,9 @@ export default function ProductUgcGallery({ images = [] }: ProductUgcGalleryProp
               onClick={handleNext}
               className="w-20 sm:w-36 h-44 sm:h-64 rounded-3xl overflow-hidden bg-neutral-100 shadow-md opacity-60 hover:opacity-90 transition-all cursor-pointer shrink-0 scale-95"
             >
-              <img
+              <ResolvedUgcImg
                 src={nextImg.url}
                 alt={nextImg.caption || 'Customer review'}
-                referrerPolicy="no-referrer"
-                className="w-full h-full object-cover"
               />
             </div>
           )}

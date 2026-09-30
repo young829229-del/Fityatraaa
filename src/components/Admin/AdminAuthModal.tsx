@@ -1,6 +1,11 @@
 import { useState } from 'react';
-import { auth, googleProvider } from '../../firebase';
-import { signInWithPopup } from 'firebase/auth';
+import {
+  auth,
+  googleProvider,
+  signInWithPopup,
+  signOut,
+  verifyAdminAccess
+} from '../../firebase';
 
 interface AdminAuthModalProps {
   isOpen?: boolean;
@@ -16,6 +21,7 @@ export default function AdminAuthModal({
   onAuthenticated
 }: AdminAuthModalProps) {
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
   if (!isOpen) return null;
 
@@ -26,19 +32,33 @@ export default function AdminAuthModal({
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
+    setErrorMessage('');
     try {
       googleProvider.setCustomParameters({ prompt: 'select_account' });
-      await signInWithPopup(auth, googleProvider);
-      completeLogin();
-    } catch {
-      completeLogin();
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+
+      const isAuthorized = await verifyAdminAccess(user);
+      if (isAuthorized) {
+        completeLogin();
+      } else {
+        await signOut(auth);
+        setErrorMessage('This Google account is not authorized to access the admin panel.');
+      }
+    } catch (err: any) {
+      await signOut(auth).catch(() => {});
+      if (err?.code !== 'auth/popup-closed-by-user' && err?.code !== 'auth/cancelled-popup-request') {
+        setErrorMessage(
+          err?.message || 'Google authentication failed. Please try again with an authorized admin account.'
+        );
+      }
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen w-full bg-neutral-950 flex items-center justify-center p-4">
+    <div className="min-h-screen w-full bg-neutral-950 flex flex-col items-center justify-center p-4 gap-4">
       <button
         type="button"
         onClick={handleGoogleSignIn}
@@ -63,8 +83,14 @@ export default function AdminAuthModal({
             d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96z"
           />
         </svg>
-        <span>Login with Google</span>
+        <span>{loading ? 'Signing in...' : 'Login with Google'}</span>
       </button>
+
+      {errorMessage && (
+        <p className="text-red-400 text-xs sm:text-sm font-semibold text-center max-w-sm px-3">
+          {errorMessage}
+        </p>
+      )}
     </div>
   );
 }

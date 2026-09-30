@@ -1,4 +1,4 @@
-import { useState, useRef, TouchEvent } from 'react';
+import { useState, useRef, useEffect, TouchEvent } from 'react';
 import { ChevronLeft, ChevronRight, Play, Volume2, VolumeX, Package } from 'lucide-react';
 import { useResolvedMediaUrl } from '../../services/storageService';
 
@@ -19,6 +19,14 @@ function ResolvedGalleryImage({
 }) {
   const resolvedSrc = useResolvedMediaUrl(src);
   const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setHasError(false);
+  }, [src, resolvedSrc]);
+
+  if (src && !resolvedSrc) {
+    return <div className="w-full h-full bg-[#F9F9F8] animate-pulse" />;
+  }
 
   if (!resolvedSrc || hasError) {
     return (

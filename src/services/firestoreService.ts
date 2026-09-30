@@ -11,7 +11,7 @@ import {
   orderBy,
   limit
 } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType, auth } from '../firebase';
+import { db, handleFirestoreError, OperationType, auth, isAuthorizedAdminUser } from '../firebase';
 import {
   Product,
   Order,
@@ -56,7 +56,11 @@ export function subscribeToProducts(callback: (products: Product[]) => void): ()
       (snapshot) => {
         if (snapshot.empty && !hasSeededProducts) {
           hasSeededProducts = true;
-          seedInitialProductsIfEmpty().then(callback);
+          if (isAuthorizedAdminUser(auth.currentUser)) {
+            seedInitialProductsIfEmpty().then(callback);
+          } else {
+            callback(INITIAL_PRODUCTS.map((p) => enrichProductWithDefaults(p)));
+          }
         } else {
           const products = snapshot.docs.map((docSnap) =>
             enrichProductWithDefaults(docSnap.data() as Product)
@@ -454,6 +458,9 @@ export async function seedBaselineReviews(): Promise<ReviewRecord[]> {
     }
   ];
 
+  if (!isAuthorizedAdminUser(auth.currentUser)) {
+    return defaults;
+  }
   try {
     for (const rev of defaults) {
       await setDoc(doc(db, REVIEWS_COLLECTION, rev.id), rev);
@@ -554,6 +561,9 @@ export async function seedBaselinePaymentSettings(): Promise<PaymentMethodSettin
     }
   ];
 
+  if (!isAuthorizedAdminUser(auth.currentUser)) {
+    return defaults;
+  }
   try {
     for (const item of defaults) {
       await setDoc(doc(db, PAYMENT_SETTINGS_COLLECTION, item.id), item);
@@ -610,9 +620,13 @@ export function subscribeToBanners(callback: (banners: StoreBanner[]) => void): 
             displayLocation: 'hero',
             createdAt: new Date().toISOString()
           };
-          setDoc(doc(db, BANNERS_COLLECTION, defaultHero.id), defaultHero)
-            .then(() => callback([defaultHero]))
-            .catch(() => callback([defaultHero]));
+          if (isAuthorizedAdminUser(auth.currentUser)) {
+            setDoc(doc(db, BANNERS_COLLECTION, defaultHero.id), defaultHero)
+              .then(() => callback([defaultHero]))
+              .catch(() => callback([defaultHero]));
+          } else {
+            callback([defaultHero]);
+          }
         } else {
           const banners = snapshot.docs.map((d) => d.data() as StoreBanner);
           banners.sort((a, b) => (a.displayOrder || 1) - (b.displayOrder || 1));
@@ -670,7 +684,9 @@ export function subscribeToStoreSettings(callback: (settings: StoreSettings) => 
               redefineVideoHeading: data.redefineVideoHeading || 'Redefine Yourself',
               redefineVideoEnabled: data.redefineVideoEnabled ?? true
             };
-            setDoc(docRef, patched, { merge: true }).catch(console.warn);
+            if (isAuthorizedAdminUser(auth.currentUser)) {
+              setDoc(docRef, patched, { merge: true }).catch(console.warn);
+            }
             callback(patched);
           } else {
             callback(data);
@@ -689,7 +705,9 @@ export function subscribeToStoreSettings(callback: (settings: StoreSettings) => 
             redefineVideoHeading: 'Redefine Yourself',
             redefineVideoEnabled: true
           };
-          setDoc(docRef, defaultSettings).catch(console.warn);
+          if (isAuthorizedAdminUser(auth.currentUser)) {
+            setDoc(docRef, defaultSettings).catch(console.warn);
+          }
           callback(defaultSettings);
         }
       },
@@ -718,6 +736,7 @@ export async function updateStoreSettingsInFirestore(updates: Partial<StoreSetti
 // -------------------------------------------------------------
 
 export async function logAdminActivity(action: string, details?: string): Promise<void> {
+  if (!isAuthorizedAdminUser(auth.currentUser)) return;
   try {
     const id = `act_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const record: AdminActivity = {

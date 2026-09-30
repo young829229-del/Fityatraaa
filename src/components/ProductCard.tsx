@@ -1,5 +1,6 @@
 import { Flame, Star } from 'lucide-react';
 import { Product } from '../types';
+import { useResolvedMediaUrl } from '../services/storageService';
 
 interface ProductCardProps {
   product: Product;
@@ -8,6 +9,10 @@ interface ProductCardProps {
 }
 
 export default function ProductCard({ product, onSelectProduct, onAddToCartDirect }: ProductCardProps) {
+  const primaryImageSrc =
+    product.image || (product.gallery && product.gallery.length > 0 ? product.gallery[0] : '');
+  const resolvedImage = useResolvedMediaUrl(primaryImageSrc);
+
   const formattedPrice = `${product.pricePrefix || ''}Rs${product.price.toLocaleString('en-US')}.00`;
   const formattedOriginalPrice = `Rs${product.originalPrice.toLocaleString('en-US')}.00`;
 
@@ -42,12 +47,14 @@ export default function ProductCard({ product, onSelectProduct, onAddToCartDirec
             </div>
           )}
 
-          <img
-            src={product.image}
-            alt={product.name}
-            referrerPolicy="no-referrer"
-            className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-200"
-          />
+          {resolvedImage && (
+            <img
+              src={resolvedImage}
+              alt={product.name}
+              referrerPolicy="no-referrer"
+              className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-200"
+            />
+          )}
         </div>
 
         {/* Title */}

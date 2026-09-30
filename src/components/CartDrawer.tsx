@@ -1,5 +1,23 @@
 import { X, Trash2, ShoppingBag, ArrowRight } from 'lucide-react';
 import { CartItem, ShippingRegion } from '../types';
+import { useResolvedMediaUrl } from '../services/storageService';
+
+function CartProductThumb({ src, alt }: { src: string; alt: string }) {
+  const resolved = useResolvedMediaUrl(src);
+  if (!resolved) {
+    return (
+      <div className="w-16 h-16 bg-[#F8F9FA] rounded-none p-1.5 shrink-0 border border-neutral-200" />
+    );
+  }
+  return (
+    <img
+      src={resolved}
+      alt={alt}
+      referrerPolicy="no-referrer"
+      className="w-16 h-16 object-contain bg-[#F8F9FA] rounded-none p-1.5 shrink-0 border border-neutral-200"
+    />
+  );
+}
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -116,11 +134,9 @@ export default function CartDrawer({
                   key={`${item.product.id}-${item.selectedBundle?.id || 'single'}-${item.selectedVariant || 'default'}-${idx}`}
                   className="flex gap-3 pb-3 border-b border-neutral-100 items-center justify-between"
                 >
-                  <img
+                  <CartProductThumb
                     src={item.product.image}
                     alt={item.product.name}
-                    referrerPolicy="no-referrer"
-                    className="w-16 h-16 object-contain bg-[#F8F9FA] rounded-none p-1.5 shrink-0 border border-neutral-200"
                   />
 
                   <div className="flex-1 min-w-0 pr-2">

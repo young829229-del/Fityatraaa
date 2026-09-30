@@ -40,7 +40,7 @@ import {
   subscribeToStoreSettings,
   saveProductToFirestore
 } from './services/firestoreService';
-import { auth } from './firebase';
+import { auth, verifyAdminAccess } from './firebase';
 
 function checkIsAdminUrl(): boolean {
   const hash = window.location.hash.toLowerCase();
@@ -104,11 +104,12 @@ export default function App() {
     };
   }, []);
 
-  // Listen to Firebase Auth state for admin verification (no localStorage auth)
+  // Listen to Firebase Auth state for admin verification (strictly checks authorized admin Gmail)
   useEffect(() => {
-    const unsubAuth = onAuthStateChanged(auth, (user) => {
-      if (user && user.email) {
-        setIsAdminAuthenticated(true);
+    const unsubAuth = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        const authorized = await verifyAdminAccess(user);
+        setIsAdminAuthenticated(authorized);
       } else {
         setIsAdminAuthenticated(false);
       }
@@ -262,8 +263,9 @@ export default function App() {
           <AdminAuthModal
             isOpen={true}
             onClose={navigateToStore}
-            onSuccess={() => {
-              setIsAdminAuthenticated(true);
+            onSuccess={async () => {
+              const authorized = await verifyAdminAccess(auth.currentUser);
+              setIsAdminAuthenticated(authorized);
             }}
           />
         </div>

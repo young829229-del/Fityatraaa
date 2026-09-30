@@ -13,14 +13,14 @@ const MEDIA_FILES_COLLECTION = 'media_files';
 const MEDIA_CHUNKS_COLLECTION = 'media_chunks';
 const CHUNK_SIZE = 650 * 1024; // ~650KB per Firestore chunk (well under 1MB limit)
 
-// In-memory cache of resolved firestore-media:// URLs -> Object/Data URLs
+// In-memory cache of resolved firestore-media:// or gs:// URLs -> permanent Data/HTTPS URLs
 const resolvedMediaCache = new Map<string, string>();
 const pendingResolutions = new Map<string, Promise<string>>();
 
 /**
- * Compress an image file via HTML5 canvas so inline Data URLs stay small and fast
+ * Compress an image file via HTML5 canvas so product/banner images load fast and stay crisp
  */
-async function compressImageToDataUrl(file: File, maxDim = 1100, quality = 0.8): Promise<string> {
+async function compressImageToDataUrl(file: File, maxDim = 1200, quality = 0.82): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -44,12 +44,13 @@ async function compressImageToDataUrl(file: File, maxDim = 1100, quality = 0.8):
           const ctx = canvas.getContext('2d');
           if (!ctx) return rawDataUrl;
           ctx.drawImage(img, 0, 0, width, height);
-          return canvas.toDataURL('image/jpeg', q);
+          const outMime = file.type === 'image/png' || file.type === 'image/webp' ? 'image/webp' : 'image/jpeg';
+          return canvas.toDataURL(outMime, q);
         };
 
         let compressed = renderAtScale(maxDim, quality);
-        if (compressed.length > 160 * 1024) {
-          compressed = renderAtScale(820, 0.72);
+        if (compressed.length > 220 * 1024) {
+          compressed = renderAtScale(900, 0.76);
         }
         resolve(compressed.length < rawDataUrl.length ? compressed : rawDataUrl);
       };
@@ -74,8 +75,7 @@ function readFileAsDataUrl(file: File): Promise<string> {
 }
 
 /**
- * Saves a large Data URL (such as a video or large image) into Firestore chunks
- * and returns a `firestore-media://{mediaId}` reference string.
+ * Saves a Data URL into Firestore chunks and returns a `firestore-media://{mediaId}` reference string.
  */
 async function saveDataUrlToFirestoreChunks(
   dataUrl: string,
@@ -109,38 +109,76 @@ async function saveDataUrlToFirestoreChunks(
     }
   }
 
-  // Convert DataURL to Blob ObjectURL and prime the cache immediately for instant playback
-  try {
-    const res = await fetch(dataUrl);
-    const blob = await res.blob();
-    const objectUrl = URL.createObjectURL(blob);
-    const refUri = `firestore-media://${mediaId}`;
-    resolvedMediaCache.set(refUri, objectUrl);
-  } catch {
-    resolvedMediaCache.set(`firestore-media://${mediaId}`, dataUrl);
+  const refUri = `firestore-media://${mediaId}`;
+  // For images, cache the permanent Data URL directly so it never expires in memory
+  if (dataUrl.startsWith('data:image/')) {
+    resolvedMediaCache.set(refUri, dataUrl);
+  } else {
+    try {
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      resolvedMediaCache.set(refUri, objectUrl);
+    } catch {
+      resolvedMediaCache.set(refUri, dataUrl);
+    }
   }
 
   if (onProgress) onProgress(100);
-  return `firestore-media://${mediaId}`;
+  return refUri;
 }
 
 /**
- * Resolves a media URL. If it is a `firestore-media://{mediaId}` URI,
- * fetches the chunks from Firestore and returns a playable Blob ObjectURL.
+ * Resolves a media URL.
+ * - If it is a `firestore-media://{mediaId}` URI, fetches chunks from Firestore and returns a permanent Data URL (for images) or Blob URL (for videos).
+ * - If it is a `gs://` URI or relative Firebase Storage reference, resolves via `getDownloadURL`.
+ * - If it is already an `https://` or `data:` URL, returns it directly.
  */
 export async function resolveMediaUrl(url?: string): Promise<string> {
   if (!url) return '';
-  if (!url.startsWith('firestore-media://')) return url;
+  const trimmed = url.trim();
+  if (!trimmed) return '';
 
-  const cached = resolvedMediaCache.get(url);
+  // Standard HTTP(S) or Data URLs can be used directly
+  if (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('data:') ||
+    trimmed.startsWith('blob:') ||
+    trimmed.startsWith('/')
+  ) {
+    return trimmed;
+  }
+
+  const cached = resolvedMediaCache.get(trimmed);
   if (cached) return cached;
 
-  const pending = pendingResolutions.get(url);
+  const pending = pendingResolutions.get(trimmed);
   if (pending) return pending;
 
+  // Handle Firebase Storage gs:// or relative storage paths
+  if (!trimmed.startsWith('firestore-media://')) {
+    const storagePromise = (async () => {
+      try {
+        const storageRef = ref(storage, trimmed);
+        const downloadUrl = await getDownloadURL(storageRef);
+        resolvedMediaCache.set(trimmed, downloadUrl);
+        return downloadUrl;
+      } catch (err) {
+        console.warn('Error resolving Firebase Storage path:', err);
+        return trimmed;
+      } finally {
+        pendingResolutions.delete(trimmed);
+      }
+    })();
+    pendingResolutions.set(trimmed, storagePromise);
+    return storagePromise;
+  }
+
+  // Handle firestore-media://{mediaId}
   const promise = (async () => {
     try {
-      const mediaId = url.replace('firestore-media://', '').trim();
+      const mediaId = trimmed.replace('firestore-media://', '').trim();
       const metaSnap = await getDoc(doc(db, MEDIA_FILES_COLLECTION, mediaId));
       if (!metaSnap.exists()) return '';
 
@@ -158,36 +196,52 @@ export async function resolveMediaUrl(url?: string): Promise<string> {
       const fullDataUrl = chunks.join('');
       if (!fullDataUrl) return '';
 
+      // For images, return the self-contained Data URL directly so it never expires
+      if (fullDataUrl.startsWith('data:image/') || (meta.mimeType && meta.mimeType.startsWith('image/'))) {
+        resolvedMediaCache.set(trimmed, fullDataUrl);
+        return fullDataUrl;
+      }
+
       try {
         const response = await fetch(fullDataUrl);
         const blob = await response.blob();
         const blobUrl = URL.createObjectURL(blob);
-        resolvedMediaCache.set(url, blobUrl);
+        resolvedMediaCache.set(trimmed, blobUrl);
         return blobUrl;
       } catch {
-        resolvedMediaCache.set(url, fullDataUrl);
+        resolvedMediaCache.set(trimmed, fullDataUrl);
         return fullDataUrl;
       }
     } catch (err) {
       console.warn('Error resolving Firestore media URL:', err);
       return '';
     } finally {
-      pendingResolutions.delete(url);
+      pendingResolutions.delete(trimmed);
     }
   })();
 
-  pendingResolutions.set(url, promise);
+  pendingResolutions.set(trimmed, promise);
   return promise;
 }
 
 /**
- * React hook to transparently resolve `firestore-media://` URLs or normal URLs
+ * React hook to transparently resolve `firestore-media://`, `gs://`, or normal HTTPS/Data URLs
  */
 export function useResolvedMediaUrl(url?: string): string {
   const [resolved, setResolved] = useState<string>(() => {
     if (!url) return '';
-    if (!url.startsWith('firestore-media://')) return url;
-    return resolvedMediaCache.get(url) || '';
+    const trimmed = url.trim();
+    if (!trimmed) return '';
+    if (
+      trimmed.startsWith('http://') ||
+      trimmed.startsWith('https://') ||
+      trimmed.startsWith('data:') ||
+      trimmed.startsWith('blob:') ||
+      trimmed.startsWith('/')
+    ) {
+      return trimmed;
+    }
+    return resolvedMediaCache.get(trimmed) || '';
   });
 
   useEffect(() => {
@@ -196,16 +250,27 @@ export function useResolvedMediaUrl(url?: string): string {
       setResolved('');
       return;
     }
-    if (!url.startsWith('firestore-media://')) {
-      setResolved(url);
+    const trimmed = url.trim();
+    if (!trimmed) {
+      setResolved('');
       return;
     }
-    const cached = resolvedMediaCache.get(url);
+    if (
+      trimmed.startsWith('http://') ||
+      trimmed.startsWith('https://') ||
+      trimmed.startsWith('data:') ||
+      trimmed.startsWith('blob:') ||
+      trimmed.startsWith('/')
+    ) {
+      setResolved(trimmed);
+      return;
+    }
+    const cached = resolvedMediaCache.get(trimmed);
     if (cached) {
       setResolved(cached);
       return;
     }
-    resolveMediaUrl(url).then((res) => {
+    resolveMediaUrl(trimmed).then((res) => {
       if (active) setResolved(res);
     });
     return () => {
@@ -217,7 +282,7 @@ export function useResolvedMediaUrl(url?: string): string {
 }
 
 /**
- * Uploads a file (image or video) to Firebase Storage or Firestore chunked storage.
+ * Uploads a file (image or video) to Firebase Storage or persistent Firestore chunked storage.
  */
 export async function uploadFileToStorage(
   file: File,
@@ -229,20 +294,11 @@ export async function uploadFileToStorage(
   const storagePath = `${folder}/${timestamp}_${sanitizedName}`;
   const isVideo = file.type.startsWith('video/');
 
-  // Fallback helper that stores images (compressed) or videos (chunked in Firestore)
+  // Persistent Firestore storage helper
   const fallbackStoreInFirestore = async (): Promise<UploadResult> => {
     if (onProgress) onProgress(10);
     if (!isVideo && file.type.startsWith('image/')) {
       const compressedDataUrl = await compressImageToDataUrl(file);
-      // If compressed image is tiny (< 55KB), return Data URL directly; otherwise store in Firestore chunks so a product can hold 50+ gallery images
-      if (compressedDataUrl.length < 55 * 1024) {
-        if (onProgress) onProgress(100);
-        return {
-          url: compressedDataUrl,
-          path: storagePath,
-          name: file.name
-        };
-      }
       const mediaUri = await saveDataUrlToFirestoreChunks(compressedDataUrl, file, onProgress);
       return {
         url: mediaUri,
@@ -251,7 +307,6 @@ export async function uploadFileToStorage(
       };
     }
 
-    // Video or other file: read as Data URL and store in Firestore chunks so it never hits 1MB doc limit
     const rawDataUrl = await readFileAsDataUrl(file);
     const mediaUri = await saveDataUrlToFirestoreChunks(rawDataUrl, file, onProgress);
     return {
@@ -261,7 +316,6 @@ export async function uploadFileToStorage(
     };
   };
 
-  // For videos or when storage bucket isn't configured, use Firestore chunked storage directly if Storage times out or fails
   try {
     if (!storage.app.options.storageBucket) {
       return await fallbackStoreInFirestore();
@@ -274,7 +328,7 @@ export async function uploadFileToStorage(
 
     return await new Promise<UploadResult>((resolve, reject) => {
       let settled = false;
-      // If Firebase Storage doesn't transfer any bytes within 3.5 seconds (e.g. unprovisioned bucket/CORS), fall back to Firestore storage
+      // If Firebase Storage doesn't transfer bytes within 2.5 seconds (e.g. unprovisioned bucket/CORS), persist in Firestore
       const stallTimer = setTimeout(() => {
         if (!settled && uploadTask.snapshot.bytesTransferred === 0) {
           settled = true;
@@ -283,7 +337,7 @@ export async function uploadFileToStorage(
           } catch {}
           fallbackStoreInFirestore().then(resolve).catch(reject);
         }
-      }, 3500);
+      }, 2500);
 
       uploadTask.on(
         'state_changed',

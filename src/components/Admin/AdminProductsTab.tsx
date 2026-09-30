@@ -136,7 +136,17 @@ export default function AdminProductsTab({
     try {
       const res = await uploadFileToStorage(files[0], `products/${editingProduct.id}/main`);
       if (res.url) {
-        setEditingProduct((prev) => (prev ? { ...prev, image: res.url } : prev));
+        setEditingProduct((prev) => {
+          if (!prev) return prev;
+          const otherGallery = (prev.gallery || []).filter(
+            (img) => img && img !== prev.image && img !== res.url
+          );
+          return {
+            ...prev,
+            image: res.url,
+            gallery: [res.url, ...otherGallery]
+          };
+        });
       }
     } catch (err) {
       console.error('Main image upload error:', err);

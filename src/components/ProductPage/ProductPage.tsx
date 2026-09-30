@@ -28,6 +28,20 @@ import ProductFaqSection from './ProductFaqSection';
 import ProductLeanPhysique from './ProductLeanPhysique';
 import ProductRelatedSection from './ProductRelatedSection';
 import Footer, { StorePageType } from '../Footer';
+import { useResolvedMediaUrl } from '../../services/storageService';
+
+function ResolvedDetailBanner({ src, alt }: { src: string; alt: string }) {
+  const resolved = useResolvedMediaUrl(src);
+  if (!resolved) return null;
+  return (
+    <img
+      src={resolved}
+      alt={alt}
+      referrerPolicy="no-referrer"
+      className="w-full rounded-xl object-cover"
+    />
+  );
+}
 
 interface ProductPageProps {
   product: Product;
@@ -306,20 +320,23 @@ export default function ProductPage({
     if (!item || !item.enabled) return null;
 
     switch (item.type) {
-      case 'gallery':
+      case 'gallery': {
+        const galleryImages = Array.from(
+          new Set([
+            ...(product.image ? [product.image] : []),
+            ...(product.gallery || []).filter(Boolean)
+          ])
+        );
         return (
           <div key={item.id} className="w-full">
             <ProductGallery
-              images={
-                product.gallery && product.gallery.length > 0
-                  ? product.gallery
-                  : [product.image]
-              }
+              images={galleryImages}
               videoUrl={product.videoUrl}
               productName={product.name}
             />
           </div>
         );
+      }
 
       case 'rating':
         return (
@@ -379,7 +396,7 @@ export default function ProductPage({
 
       case 'add_to_cart':
         return (
-          <div key={item.id} className="w-full">
+          <div key={item.id} className="w-full space-y-4">
             <ProductAddToCart
               onAddToCart={handleAddToCartClick}
               price={totalDisplayPrice}
@@ -389,6 +406,17 @@ export default function ProductPage({
               isSoldOut={isSoldOut}
               deliveryInfo={product.deliveryInfo}
             />
+            {product.detailBanners && product.detailBanners.length > 0 && (
+              <div className="space-y-3 pt-2">
+                {product.detailBanners.map((bannerUrl, idx) => (
+                  <ResolvedDetailBanner
+                    key={`${bannerUrl}-${idx}`}
+                    src={bannerUrl}
+                    alt={`${product.name} detail ${idx + 1}`}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         );
 
@@ -436,19 +464,6 @@ export default function ProductPage({
               descriptionHtml={product.descriptionHtml}
               fallbackDescription={product.description}
             />
-            {product.detailBanners && product.detailBanners.length > 0 && (
-              <div className="space-y-3 pt-2">
-                {product.detailBanners.map((bannerUrl, idx) => (
-                  <img
-                    key={`${bannerUrl}-${idx}`}
-                    src={bannerUrl}
-                    alt={`${product.name} detail ${idx + 1}`}
-                    referrerPolicy="no-referrer"
-                    className="w-full rounded-xl object-cover"
-                  />
-                ))}
-              </div>
-            )}
           </div>
         );
 

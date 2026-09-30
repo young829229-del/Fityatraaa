@@ -1,6 +1,12 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+  User
+} from 'firebase/auth';
+import { getFirestore, doc, getDoc, getDocFromServer } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -11,6 +17,44 @@ export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
+
+// Configured authorized admin Gmail addresses
+const envAdminEmails =
+  typeof import.meta !== 'undefined' && import.meta.env?.VITE_ADMIN_EMAILS
+    ? String(import.meta.env.VITE_ADMIN_EMAILS)
+        .split(',')
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean)
+    : [];
+
+export const AUTHORIZED_ADMIN_EMAILS: string[] = Array.from(
+  new Set(['young829229@gmail.com', ...envAdminEmails])
+);
+
+/**
+ * Synchronously checks whether a Firebase Auth user matches an authorized admin Gmail
+ */
+export function isAuthorizedAdminUser(user: User | null | undefined): boolean {
+  if (!user || !user.email || !user.emailVerified) return false;
+  return AUTHORIZED_ADMIN_EMAILS.includes(user.email.trim().toLowerCase());
+}
+
+/**
+ * Verifies admin authorization against configured admin Gmail(s) or the protected /admins/{uid} collection
+ */
+export async function verifyAdminAccess(user: User | null | undefined): Promise<boolean> {
+  if (!user || !user.email || !user.emailVerified) return false;
+  if (isAuthorizedAdminUser(user)) return true;
+
+  try {
+    const adminDoc = await getDoc(doc(db, 'admins', user.uid));
+    return adminDoc.exists();
+  } catch {
+    return false;
+  }
+}
+
+export { signInWithPopup, signOut };
 
 export enum OperationType {
   CREATE = 'create',

@@ -82,7 +82,6 @@ export const DEFAULT_SCOOP_SECTION: ScoopEditorialConfig = {
     'Wellcore Creatine complements your training. Taken daily, it supports the Strength and Power you build session after session — the kind of results that show up over weeks, not days. Mix your scoop, then train.',
   ctaText: 'Add to Cart',
   images: [
-    '/src/assets/images/wellcore_creatine_1790339507337.jpg',
     'https://i.ibb.co/KcBDpGYD/MV2-1-1-1.jpg',
     'https://i.ibb.co/dJBH98db/MV2-1-1-1-1.jpg'
   ]
@@ -93,7 +92,7 @@ export const DEFAULT_LEAN_PHYSIQUE: BuildPhysiqueConfig = {
   heading: 'Build Lean Physique',
   subtitle: 'Premium quality you can trust. Fair pricing. Hassle-free returns.',
   badges: ['Strength', 'Energy', 'Muscle Fullness'],
-  image: '/src/assets/images/wellcore_creatine_1790339507337.jpg',
+  image: 'https://i.ibb.co/KcBDpGYD/MV2-1-1-1.jpg',
   buttonText: 'Shop Now'
 };
 
@@ -659,31 +658,49 @@ export function enrichProductWithDefaults(product: Product): Product {
         ...product.promotionalBanner
       };
 
-  const scoopSection: ScoopEditorialConfig = product.scoopSection ||
-    baseline.scoopSection || {
-      enabled: true,
-      heading: `In Every Scoop of ${product.id === 'wellcore-creatine' ? 'Wellcore Creatine' : product.name}`,
-      description:
-        product.id === 'wellcore-creatine'
-          ? DEFAULT_SCOOP_SECTION.description
-          : product.description || DEFAULT_SCOOP_SECTION.description,
-      ctaText: 'Add to Cart',
-      images:
-        product.gallery && product.gallery.length > 0
-          ? product.gallery.slice(0, 3)
-          : [product.image]
-    };
+  const activeGallery =
+    product.gallery && product.gallery.length > 0
+      ? product.gallery
+      : product.image
+      ? [product.image]
+      : baseline.gallery || [];
+
+  const scoopSection: ScoopEditorialConfig = {
+    ...(baseline.scoopSection || DEFAULT_SCOOP_SECTION),
+    ...(product.scoopSection || {}),
+    heading:
+      product.scoopSection?.heading ||
+      baseline.scoopSection?.heading ||
+      `In Every Scoop of ${product.id === 'wellcore-creatine' ? 'Wellcore Creatine' : product.name}`,
+    description:
+      product.scoopSection?.description ||
+      baseline.scoopSection?.description ||
+      product.description ||
+      DEFAULT_SCOOP_SECTION.description,
+    images:
+      activeGallery.length > 0
+        ? activeGallery.slice(0, 3)
+        : (product.scoopSection?.images || baseline.scoopSection?.images || [product.image]).filter(
+            (img) => img && !img.startsWith('/src/assets/')
+          )
+  };
 
   const faqs: ProductFaqItem[] =
     product.faqs && product.faqs.length > 0
       ? product.faqs
       : baseline.faqs || DEFAULT_PRODUCT_FAQS;
 
-  const leanPhysiqueSection: BuildPhysiqueConfig = product.leanPhysiqueSection ||
-    baseline.leanPhysiqueSection || {
-      ...DEFAULT_LEAN_PHYSIQUE,
-      image: product.image || DEFAULT_LEAN_PHYSIQUE.image
-    };
+  const leanPhysiqueSection: BuildPhysiqueConfig = {
+    ...DEFAULT_LEAN_PHYSIQUE,
+    ...(baseline.leanPhysiqueSection || {}),
+    ...(product.leanPhysiqueSection || {}),
+    image:
+      product.image ||
+      (product.leanPhysiqueSection?.image &&
+      !product.leanPhysiqueSection.image.startsWith('/src/assets/')
+        ? product.leanPhysiqueSection.image
+        : DEFAULT_LEAN_PHYSIQUE.image)
+  };
 
   const deliveryInfo: DeliveryInfoConfig = product.deliveryInfo ||
     baseline.deliveryInfo || {

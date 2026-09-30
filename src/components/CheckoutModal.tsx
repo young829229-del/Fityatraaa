@@ -2,7 +2,20 @@ import { useState, useEffect, ChangeEvent } from 'react';
 import { X, CheckCircle, Copy, Upload, ArrowRight, Loader2, QrCode } from 'lucide-react';
 import { CartItem, ShippingRegion, PaymentMethodSetting } from '../types';
 import { saveOrderToFirestore, subscribeToPaymentSettings } from '../services/firestoreService';
-import { uploadFileToStorage } from '../services/storageService';
+import { uploadFileToStorage, useResolvedMediaUrl } from '../services/storageService';
+
+function ResolvedQrImage({ src }: { src: string }) {
+  const resolved = useResolvedMediaUrl(src);
+  if (!resolved) return null;
+  return (
+    <img
+      src={resolved}
+      alt="Payment QR Code"
+      referrerPolicy="no-referrer"
+      className="w-40 h-40 bg-white p-2 rounded-xl border border-neutral-300 object-contain shadow-xs"
+    />
+  );
+}
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -335,12 +348,7 @@ export default function CheckoutModal({
                 {/* Real QR Code Uploaded by Admin */}
                 {currentMethod.qrImageUrl ? (
                   <div className="flex justify-center">
-                    <img
-                      src={currentMethod.qrImageUrl}
-                      alt="Payment QR Code"
-                      referrerPolicy="no-referrer"
-                      className="w-40 h-40 bg-white p-2 rounded-xl border border-neutral-300 object-contain shadow-xs"
-                    />
+                    <ResolvedQrImage src={currentMethod.qrImageUrl} />
                   </div>
                 ) : (
                   <div className="w-32 h-32 mx-auto bg-neutral-200/60 rounded-xl flex items-center justify-center text-neutral-400">

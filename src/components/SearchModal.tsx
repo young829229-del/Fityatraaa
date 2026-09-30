@@ -1,6 +1,24 @@
 import { useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { Product } from '../types';
+import { useResolvedMediaUrl } from '../services/storageService';
+
+function SearchResultThumb({ src, alt }: { src: string; alt: string }) {
+  const resolved = useResolvedMediaUrl(src);
+  if (!resolved) {
+    return (
+      <div className="w-12 h-12 bg-[#F8F9FA] rounded-md p-1 border border-neutral-100 shrink-0" />
+    );
+  }
+  return (
+    <img
+      src={resolved}
+      alt={alt}
+      referrerPolicy="no-referrer"
+      className="w-12 h-12 object-contain bg-[#F8F9FA] rounded-md p-1 border border-neutral-100 shrink-0"
+    />
+  );
+}
 
 interface SearchModalProps {
   isOpen: boolean;
@@ -73,11 +91,9 @@ export default function SearchModal({
                 }}
                 className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-neutral-50 cursor-pointer transition-colors"
               >
-                <img
+                <SearchResultThumb
                   src={product.image}
                   alt={product.name}
-                  referrerPolicy="no-referrer"
-                  className="w-12 h-12 object-contain bg-[#F8F9FA] rounded-md p-1 border border-neutral-100"
                 />
                 <div className="flex-1 min-w-0">
                   <h4 className="font-bold text-xs sm:text-sm text-neutral-900 truncate">
