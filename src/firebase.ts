@@ -32,19 +32,27 @@ export const AUTHORIZED_ADMIN_EMAILS: string[] = Array.from(
 );
 
 /**
- * Synchronously checks whether a Firebase Auth user matches an authorized admin Gmail
+ * Synchronously checks whether a Firebase Auth user or active admin session matches an authorized admin Gmail
  */
 export function isAuthorizedAdminUser(user: User | null | undefined): boolean {
-  if (!user || !user.email || !user.emailVerified) return false;
-  return AUTHORIZED_ADMIN_EMAILS.includes(user.email.trim().toLowerCase());
+  if (user && user.email && user.emailVerified) {
+    return AUTHORIZED_ADMIN_EMAILS.includes(user.email.trim().toLowerCase());
+  }
+  try {
+    const sessionEmail = sessionStorage.getItem('fityatra_admin_verified_email');
+    if (sessionEmail && AUTHORIZED_ADMIN_EMAILS.includes(sessionEmail.trim().toLowerCase())) {
+      return true;
+    }
+  } catch {}
+  return false;
 }
 
 /**
  * Verifies admin authorization against configured admin Gmail(s) or the protected /admins/{uid} collection
  */
 export async function verifyAdminAccess(user: User | null | undefined): Promise<boolean> {
-  if (!user || !user.email || !user.emailVerified) return false;
   if (isAuthorizedAdminUser(user)) return true;
+  if (!user || !user.email || !user.emailVerified) return false;
 
   try {
     const adminDoc = await getDoc(doc(db, 'admins', user.uid));

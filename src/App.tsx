@@ -107,12 +107,8 @@ export default function App() {
   // Listen to Firebase Auth state for admin verification (strictly checks authorized admin Gmail)
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        const authorized = await verifyAdminAccess(user);
-        setIsAdminAuthenticated(authorized);
-      } else {
-        setIsAdminAuthenticated(false);
-      }
+      const authorized = await verifyAdminAccess(user);
+      setIsAdminAuthenticated(authorized);
     });
     return () => unsubAuth();
   }, []);

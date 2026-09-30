@@ -119,6 +119,9 @@ export default function AdminPanel({ onBackToStore, onOpenPageBuilder }: AdminPa
   };
 
   const handleSignOut = () => {
+    try {
+      sessionStorage.removeItem('fityatra_admin_verified_email');
+    } catch {}
     auth.signOut().catch(console.warn);
     onBackToStore();
   };
