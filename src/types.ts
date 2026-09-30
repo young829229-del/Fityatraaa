@@ -142,6 +142,7 @@ export interface Product {
   isSoldOut: boolean;
   image: string;
   gallery?: string[];
+  detailBanners?: string[];
   videoUrl?: string;
   description: string;
   descriptionHtml?: string;

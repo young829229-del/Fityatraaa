@@ -431,11 +431,24 @@ export default function ProductPage({
 
       case 'description':
         return (
-          <div key={item.id} className="w-full">
+          <div key={item.id} className="w-full space-y-3">
             <ProductDescription
               descriptionHtml={product.descriptionHtml}
               fallbackDescription={product.description}
             />
+            {product.detailBanners && product.detailBanners.length > 0 && (
+              <div className="space-y-3 pt-2">
+                {product.detailBanners.map((bannerUrl, idx) => (
+                  <img
+                    key={`${bannerUrl}-${idx}`}
+                    src={bannerUrl}
+                    alt={`${product.name} detail ${idx + 1}`}
+                    referrerPolicy="no-referrer"
+                    className="w-full rounded-xl object-cover"
+                  />
+                ))}
+              </div>
+            )}
           </div>
         );
 
