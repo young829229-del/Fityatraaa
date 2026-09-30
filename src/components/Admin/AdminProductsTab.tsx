@@ -7,7 +7,7 @@ import {
   X,
   Image as ImageIcon
 } from 'lucide-react';
-import { Product, BundleDeal } from '../../types';
+import { Product } from '../../types';
 import { uploadFileToStorage, useResolvedMediaUrl } from '../../services/storageService';
 
 function ResolvedThumb({
@@ -58,28 +58,6 @@ const CATEGORY_OPTIONS = [
   'Supplements'
 ];
 
-function buildVariantsJsonFromProduct(product: Product): string {
-  if (product.bundles && product.bundles.length > 0) {
-    const mapped = product.bundles.map((b) => ({
-      name: b.title,
-      price: b.price,
-      originalPrice: b.originalPrice
-    }));
-    return JSON.stringify(mapped, null, 2);
-  }
-  return JSON.stringify(
-    [
-      {
-        name: '1 Pack (Standard)',
-        price: product.price || 1499,
-        originalPrice: product.originalPrice || 1999
-      }
-    ],
-    null,
-    2
-  );
-}
-
 export default function AdminProductsTab({
   products = [],
   onSaveProduct,
@@ -87,9 +65,6 @@ export default function AdminProductsTab({
 }: AdminProductsTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [variantsJsonText, setVariantsJsonText] = useState<string>('');
-  const [galleryText, setGalleryText] = useState<string>('');
-  const [detailBannersText, setDetailBannersText] = useState<string>('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -123,9 +98,6 @@ export default function AdminProductsTab({
       gallery: galleryList,
       detailBanners: bannersList
     });
-    setGalleryText(galleryList.join('\n'));
-    setDetailBannersText(bannersList.join('\n'));
-    setVariantsJsonText(buildVariantsJsonFromProduct(prod));
   };
 
   const handleAddNewProduct = () => {
@@ -195,7 +167,6 @@ export default function AdminProductsTab({
               }
             : prev
         );
-        setGalleryText(nextGallery.join('\n'));
       }
     } catch (err) {
       console.error('Gallery upload error:', err);
@@ -220,7 +191,6 @@ export default function AdminProductsTab({
         setEditingProduct((prev) =>
           prev ? { ...prev, detailBanners: nextBanners } : prev
         );
-        setDetailBannersText(nextBanners.join('\n'));
       }
     } catch (err) {
       console.error('Detail banner upload error:', err);
@@ -245,51 +215,8 @@ export default function AdminProductsTab({
     if (!editingProduct) return;
     setIsSaving(true);
     try {
-      // Parse gallery links from textarea
-      const parsedGallery = galleryText
-        .split('\n')
-        .map((s) => s.trim())
-        .filter(Boolean);
-
-      // Parse detail banners from textarea
-      const parsedBanners = detailBannersText
-        .split('\n')
-        .map((s) => s.trim())
-        .filter(Boolean);
-
-      // Parse variants & quantity pricing JSON if valid
-      let updatedBundles: BundleDeal[] | undefined = editingProduct.bundles;
-      if (variantsJsonText.trim()) {
-        try {
-          const parsed = JSON.parse(variantsJsonText);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            updatedBundles = parsed.map((item: any, idx: number) => {
-              const price = Number(item.price) || editingProduct.price;
-              const originalPrice = Number(item.originalPrice) || editingProduct.originalPrice || price;
-              const savingsAmount = Math.max(0, originalPrice - price);
-              const savingsPercentage =
-                originalPrice > price
-                  ? Math.round(((originalPrice - price) / originalPrice) * 100)
-                  : 0;
-              return {
-                id: item.id || `pack-${idx + 1}`,
-                title: String(item.name || item.title || `${idx + 1} Pack`),
-                quantity: Number(item.quantity) || idx + 1,
-                price,
-                originalPrice,
-                savingsAmount,
-                savingsPercentage,
-                badgeText: item.badgeText || (idx === 1 ? 'MOST POPULAR' : ''),
-                isPopular: idx === 1,
-                isDefault: idx === 0,
-                enabled: true
-              };
-            });
-          }
-        } catch {
-          // Keep existing bundles if JSON has syntax error
-        }
-      }
+      const galleryList = editingProduct.gallery || [];
+      const bannersList = editingProduct.detailBanners || [];
 
       const discountPercentage =
         editingProduct.originalPrice > editingProduct.price
@@ -302,13 +229,17 @@ export default function AdminProductsTab({
 
       const finalProduct: Product = {
         ...editingProduct,
-        image: editingProduct.image || parsedGallery[0] || '',
-        gallery: parsedGallery.length > 0 ? parsedGallery : editingProduct.image ? [editingProduct.image] : [],
-        detailBanners: parsedBanners,
+        image: editingProduct.image || galleryList[0] || '',
+        gallery:
+          galleryList.length > 0
+            ? galleryList
+            : editingProduct.image
+            ? [editingProduct.image]
+            : [],
+        detailBanners: bannersList,
         discountPercentage,
         badgeType: editingProduct.isSoldOut ? 'soldout' : 'sale',
-        stock: editingProduct.isSoldOut ? 0 : Math.max(1, editingProduct.stock ?? 50),
-        bundles: updatedBundles
+        stock: editingProduct.isSoldOut ? 0 : Math.max(1, editingProduct.stock ?? 50)
       };
 
       await onSaveProduct(finalProduct);
@@ -319,9 +250,9 @@ export default function AdminProductsTab({
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 sm:space-y-5 pb-10">
       {/* ACTIVE SUPPLEMENTS HEADER */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-neutral-200/90">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 sm:p-5 rounded-2xl border border-neutral-200/90">
         <div>
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-[#EAB308]" />
@@ -337,7 +268,7 @@ export default function AdminProductsTab({
         <button
           type="button"
           onClick={handleAddNewProduct}
-          className="bg-black hover:bg-neutral-800 text-white font-black text-[11px] uppercase tracking-wider px-4 py-2.5 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
+          className="bg-black hover:bg-neutral-800 text-white font-black text-[11px] uppercase tracking-wider px-4 py-2.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer w-full sm:w-auto"
         >
           <Plus className="w-3.5 h-3.5 text-[#FACC15]" />
           <span>NEW SUPPLEMENT</span>
@@ -345,7 +276,7 @@ export default function AdminProductsTab({
       </div>
 
       {/* Search Bar */}
-      <div className="relative max-w-md">
+      <div className="relative w-full sm:max-w-md">
         <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
         <input
           type="text"
@@ -356,15 +287,15 @@ export default function AdminProductsTab({
         />
       </div>
 
-      {/* ACTIVE SUPPLEMENTS LIST ROWS (matching reference screenshot) */}
+      {/* ACTIVE SUPPLEMENTS LIST ROWS */}
       <div className="space-y-3">
         {filteredProducts.map((product) => (
           <div
             key={product.id}
-            className="bg-white rounded-xl border border-neutral-200/90 p-4 flex items-center justify-between gap-4 hover:border-neutral-300 transition-colors"
+            className="bg-white rounded-xl border border-neutral-200/90 p-3.5 sm:p-4 flex items-center justify-between gap-3 sm:gap-4 hover:border-neutral-300 transition-colors"
           >
-            <div className="flex items-center gap-4 min-w-0">
-              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl border border-neutral-100 bg-neutral-50 p-1.5 shrink-0 overflow-hidden flex items-center justify-center">
+            <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+              <div className="w-14 h-14 sm:w-20 sm:h-20 rounded-xl border border-neutral-100 bg-neutral-50 p-1.5 shrink-0 overflow-hidden flex items-center justify-center">
                 <ResolvedThumb
                   src={product.image}
                   alt={product.name}
@@ -372,19 +303,19 @@ export default function AdminProductsTab({
                 />
               </div>
 
-              <div className="min-w-0 space-y-0.5">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+              <div className="min-w-0 space-y-0.5 flex-1">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 truncate">
                   {product.brand} • {product.category}
                 </div>
-                <h3 className="text-sm sm:text-base font-black text-neutral-900 truncate">
+                <h3 className="text-xs sm:text-base font-black text-neutral-900 line-clamp-2 sm:truncate">
                   {product.name}
                 </h3>
-                <div className="flex items-center gap-2 pt-0.5">
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 pt-0.5">
                   <span className="text-xs sm:text-sm font-black text-neutral-900">
                     Rs. {product.price.toLocaleString()}
                   </span>
                   {product.originalPrice > product.price && (
-                    <span className="text-[11px] text-neutral-400 line-through">
+                    <span className="text-[10px] sm:text-[11px] text-neutral-400 line-through">
                       Rs. {product.originalPrice.toLocaleString()}
                     </span>
                   )}
@@ -401,7 +332,7 @@ export default function AdminProductsTab({
               <button
                 type="button"
                 onClick={() => openEditorForProduct(product)}
-                className="border border-neutral-800 bg-white hover:bg-neutral-900 hover:text-white text-neutral-900 text-[10px] font-black uppercase tracking-wider px-3.5 py-1.5 rounded transition-colors cursor-pointer"
+                className="border border-neutral-800 bg-white hover:bg-neutral-900 hover:text-white text-neutral-900 text-[10px] font-black uppercase tracking-wider px-3 sm:px-3.5 py-1.5 rounded transition-colors cursor-pointer"
               >
                 EDIT DETAILS
               </button>
@@ -413,7 +344,7 @@ export default function AdminProductsTab({
                     await onDeleteProduct(product.id);
                     setConfirmDeleteId(null);
                   }}
-                  className="border border-red-600 bg-red-600 text-white text-[10px] font-black uppercase tracking-wider px-3.5 py-1.5 rounded cursor-pointer"
+                  className="border border-red-600 bg-red-600 text-white text-[10px] font-black uppercase tracking-wider px-3 sm:px-3.5 py-1.5 rounded cursor-pointer"
                 >
                   CONFIRM
                 </button>
@@ -421,7 +352,7 @@ export default function AdminProductsTab({
                 <button
                   type="button"
                   onClick={() => setConfirmDeleteId(product.id)}
-                  className="border border-red-200 bg-red-50/40 hover:bg-red-600 hover:text-white text-red-600 text-[10px] font-black uppercase tracking-wider px-3.5 py-1.5 rounded transition-colors cursor-pointer"
+                  className="border border-red-200 bg-red-50/40 hover:bg-red-600 hover:text-white text-red-600 text-[10px] font-black uppercase tracking-wider px-3 sm:px-3.5 py-1.5 rounded transition-colors cursor-pointer"
                 >
                   DELETE
                 </button>
@@ -431,31 +362,31 @@ export default function AdminProductsTab({
         ))}
       </div>
 
-      {/* FULL-SCREEN ADMIN PRODUCT PAGE (1:1 Match with Screenshot_20260930_075048_Photos.jpg in Full Screen) */}
+      {/* FULL-SCREEN MOBILE-RESPONSIVE ADMIN PRODUCT EDITOR */}
       {editingProduct && (
-        <div className="fixed inset-0 z-50 bg-white flex flex-col w-screen h-screen overflow-hidden">
-          {/* Top Sticky Header */}
-          <div className="border-b border-neutral-100 px-5 sm:px-8 py-4 flex items-center justify-between bg-white shrink-0">
-            <div className="flex items-center gap-2 min-w-0">
-              <h2 className="text-xs sm:text-sm font-black uppercase tracking-wider text-neutral-900 truncate">
-                EDIT SUPPLEMENT: {editingProduct.brand ? `${editingProduct.brand.toUpperCase()} ` : ''}
-                {editingProduct.name.toUpperCase()}
-              </h2>
+        <div className="fixed inset-0 z-50 bg-white overflow-y-auto overscroll-contain">
+          <div className="min-h-full flex flex-col bg-white">
+            {/* Top Sticky Header */}
+            <div className="sticky top-0 z-20 border-b border-neutral-100 px-4 sm:px-8 py-3.5 sm:py-4 flex items-center justify-between bg-white/95 backdrop-blur-xs">
+              <div className="flex items-center gap-2 min-w-0 pr-2">
+                <h2 className="text-xs sm:text-sm font-black uppercase tracking-wider text-neutral-900 truncate">
+                  EDIT SUPPLEMENT: {editingProduct.brand ? `${editingProduct.brand.toUpperCase()} ` : ''}
+                  {editingProduct.name.toUpperCase()}
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setEditingProduct(null)}
+                className="text-neutral-400 hover:text-neutral-900 p-1.5 -mr-1 transition-colors cursor-pointer shrink-0"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setEditingProduct(null)}
-              className="text-neutral-400 hover:text-neutral-900 p-1 transition-colors cursor-pointer"
-              aria-label="Close"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          {/* Scrollable Form Body */}
-          <div className="flex-1 overflow-y-auto bg-white">
-            <div className="max-w-4xl mx-auto px-5 sm:px-8 py-6 space-y-5">
+            {/* Form Body */}
+            <div className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-8 py-5 sm:py-6 space-y-5 pb-12">
               {/* Row 1: BRAND DESIGNATION + CATEGORY CLASSIFICATION */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -516,7 +447,7 @@ export default function AdminProductsTab({
               </div>
 
               {/* Row 3: ADJUSTED PRICE (RS.) + COMPARE-AT / ORIGINAL PRICE (RS.) */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block mb-1.5">
                     ADJUSTED PRICE (RS.)
@@ -553,7 +484,7 @@ export default function AdminProductsTab({
               </div>
 
               {/* Row 4: TOTAL SERVINGS COUNT + SERVING SIZE WEIGHT */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block mb-1.5">
                     TOTAL SERVINGS COUNT
@@ -587,13 +518,11 @@ export default function AdminProductsTab({
 
               {/* Block 5: MAIN SUPPLEMENT IMAGE (SINGLE PHOTO) */}
               <div className="border border-neutral-200/90 rounded-2xl p-4 sm:p-5 space-y-4 bg-white">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold uppercase tracking-wider text-neutral-800">
-                      MAIN SUPPLEMENT IMAGE
-                    </span>
-                  </div>
-                  <span className="bg-neutral-900 text-[#FACC15] text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-neutral-800">
+                    MAIN SUPPLEMENT IMAGE
+                  </span>
+                  <span className="bg-neutral-900 text-[#FACC15] text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded shrink-0">
                     SINGLE PHOTO
                   </span>
                 </div>
@@ -610,7 +539,7 @@ export default function AdminProductsTab({
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={(e) => handleDrop(e, handleMainFiles)}
                   onClick={() => mainInputRef.current?.click()}
-                  className="border-2 border-dashed border-neutral-200 hover:border-neutral-300 rounded-xl py-7 px-4 text-center cursor-pointer transition-colors bg-white"
+                  className="border-2 border-dashed border-neutral-200 hover:border-neutral-300 rounded-xl py-6 sm:py-7 px-4 text-center cursor-pointer transition-colors bg-white"
                 >
                   {uploadingMain ? (
                     <Loader2 className="w-6 h-6 text-[#D97706] animate-spin mx-auto mb-2" />
@@ -635,34 +564,23 @@ export default function AdminProductsTab({
                     <button
                       type="button"
                       onClick={() => setEditingProduct({ ...editingProduct, image: '' })}
-                      className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-neutral-900 text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-neutral-900 text-white flex items-center justify-center text-xs shadow-md cursor-pointer"
+                      aria-label="Remove image"
                     >
                       ×
                     </button>
                   </div>
                 )}
-
-                <input
-                  type="text"
-                  value={editingProduct.image}
-                  onChange={(e) =>
-                    setEditingProduct({ ...editingProduct, image: e.target.value })
-                  }
-                  placeholder="https://..."
-                  className="w-full bg-[#FAFAFA] border border-neutral-200 rounded-lg px-3.5 py-2.5 text-xs font-mono text-neutral-600 focus:outline-none focus:border-[#EAB308]"
-                />
               </div>
 
               {/* Block 6: PRODUCT GALLERY ALBUM (MULTI-PHOTO) */}
               <div className="space-y-2">
                 <div className="border border-neutral-200/90 rounded-2xl p-4 sm:p-5 space-y-4 bg-white">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold uppercase tracking-wider text-neutral-800">
-                        PRODUCT GALLERY ALBUM
-                      </span>
-                    </div>
-                    <span className="bg-neutral-900 text-[#FACC15] text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-neutral-800">
+                      PRODUCT GALLERY ALBUM
+                    </span>
+                    <span className="bg-neutral-900 text-[#FACC15] text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded shrink-0">
                       MULTI-PHOTO
                     </span>
                   </div>
@@ -682,7 +600,7 @@ export default function AdminProductsTab({
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => handleDrop(e, handleGalleryFiles)}
                     onClick={() => galleryInputRef.current?.click()}
-                    className="border-2 border-dashed border-neutral-200 hover:border-neutral-300 rounded-xl py-7 px-4 text-center cursor-pointer transition-colors bg-white"
+                    className="border-2 border-dashed border-neutral-200 hover:border-neutral-300 rounded-xl py-6 sm:py-7 px-4 text-center cursor-pointer transition-colors bg-white"
                   >
                     {uploadingGallery ? (
                       <Loader2 className="w-6 h-6 text-[#D97706] animate-spin mx-auto mb-2" />
@@ -716,9 +634,9 @@ export default function AdminProductsTab({
                                 (_, i) => i !== idx
                               );
                               setEditingProduct({ ...editingProduct, gallery: next });
-                              setGalleryText(next.join('\n'));
                             }}
-                            className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-neutral-900 text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                            className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-neutral-900 text-white flex items-center justify-center text-xs shadow-md cursor-pointer"
+                            aria-label="Remove gallery image"
                           >
                             ×
                           </button>
@@ -726,22 +644,6 @@ export default function AdminProductsTab({
                       ))}
                     </div>
                   )}
-
-                  <textarea
-                    rows={3}
-                    value={galleryText}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setGalleryText(val);
-                      const urls = val
-                        .split('\n')
-                        .map((s) => s.trim())
-                        .filter(Boolean);
-                      setEditingProduct({ ...editingProduct, gallery: urls });
-                    }}
-                    placeholder="Or paste links (one link per line) if preferred..."
-                    className="w-full bg-[#FAFAFA] border border-neutral-200 rounded-lg px-3.5 py-2.5 text-xs font-mono text-neutral-600 focus:outline-none focus:border-[#EAB308]"
-                  />
                 </div>
                 <p className="text-[11px] text-neutral-400 pl-1">
                   These images populate the rotating image gallery at the top of the details view.
@@ -751,13 +653,11 @@ export default function AdminProductsTab({
               {/* Block 7: PRODUCT DETAIL BANNERS (MULTI-PHOTO) */}
               <div className="space-y-2">
                 <div className="border border-neutral-200/90 rounded-2xl p-4 sm:p-5 space-y-4 bg-white">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold uppercase tracking-wider text-neutral-800">
-                        PRODUCT DETAIL BANNERS
-                      </span>
-                    </div>
-                    <span className="bg-neutral-900 text-[#FACC15] text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-neutral-800">
+                      PRODUCT DETAIL BANNERS
+                    </span>
+                    <span className="bg-neutral-900 text-[#FACC15] text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded shrink-0">
                       MULTI-PHOTO
                     </span>
                   </div>
@@ -777,7 +677,7 @@ export default function AdminProductsTab({
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => handleDrop(e, handleBannerFiles)}
                     onClick={() => bannersInputRef.current?.click()}
-                    className="border-2 border-dashed border-neutral-200 hover:border-neutral-300 rounded-xl py-7 px-4 text-center cursor-pointer transition-colors bg-white"
+                    className="border-2 border-dashed border-neutral-200 hover:border-neutral-300 rounded-xl py-6 sm:py-7 px-4 text-center cursor-pointer transition-colors bg-white"
                   >
                     {uploadingBanners ? (
                       <Loader2 className="w-6 h-6 text-[#D97706] animate-spin mx-auto mb-2" />
@@ -811,9 +711,9 @@ export default function AdminProductsTab({
                                 (_, i) => i !== idx
                               );
                               setEditingProduct({ ...editingProduct, detailBanners: next });
-                              setDetailBannersText(next.join('\n'));
                             }}
-                            className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-neutral-900 text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                            className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-neutral-900 text-white flex items-center justify-center text-xs shadow-md cursor-pointer"
+                            aria-label="Remove banner image"
                           >
                             ×
                           </button>
@@ -821,22 +721,6 @@ export default function AdminProductsTab({
                       ))}
                     </div>
                   )}
-
-                  <textarea
-                    rows={2}
-                    value={detailBannersText}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setDetailBannersText(val);
-                      const urls = val
-                        .split('\n')
-                        .map((s) => s.trim())
-                        .filter(Boolean);
-                      setEditingProduct({ ...editingProduct, detailBanners: urls });
-                    }}
-                    placeholder="Or paste links (one link per line) if preferred..."
-                    className="w-full bg-[#FAFAFA] border border-neutral-200 rounded-lg px-3.5 py-2.5 text-xs font-mono text-neutral-600 focus:outline-none focus:border-[#EAB308]"
-                  />
                 </div>
                 <p className="text-[11px] text-neutral-400 pl-1">
                   Extra graphical images/banners shown below the description to offer more visual details about the product.
@@ -863,40 +747,25 @@ export default function AdminProductsTab({
                 </select>
               </div>
 
-              {/* Row 9: PRODUCT VARIANTS & QUANTITY PRICING (JSON, OPTIONAL) */}
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block mb-1.5">
-                  PRODUCT VARIANTS &amp; QUANTITY PRICING (JSON, OPTIONAL)
-                </label>
-                <textarea
-                  rows={7}
-                  value={variantsJsonText}
-                  onChange={(e) => setVariantsJsonText(e.target.value)}
-                  className="w-full bg-[#FAFAFA] border border-neutral-200 rounded-lg p-3.5 text-xs font-mono text-neutral-700 leading-relaxed focus:outline-none focus:border-[#EAB308]"
-                />
+              {/* Bottom Action Buttons (Mobile & Desktop friendly) */}
+              <div className="pt-4 pb-8 flex items-center gap-3 sm:gap-4 border-t border-neutral-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingProduct(null)}
+                  className="flex-1 border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-700 font-black text-[11px] uppercase tracking-wider py-3.5 rounded-lg transition-colors cursor-pointer"
+                >
+                  CANCEL
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveSpecifications}
+                  disabled={isSaving}
+                  className="flex-[1.35] bg-black hover:bg-neutral-900 disabled:opacity-50 text-white font-black text-[11px] uppercase tracking-wider py-3.5 rounded-lg transition-colors cursor-pointer"
+                >
+                  {isSaving ? 'SAVING...' : 'SAVE SPECIFICATIONS'}
+                </button>
               </div>
-            </div>
-          </div>
-
-          {/* Sticky Bottom Action Bar: CANCEL + SAVE SPECIFICATIONS */}
-          <div className="border-t border-neutral-100 px-5 sm:px-8 py-3.5 bg-white shrink-0">
-            <div className="max-w-4xl mx-auto flex items-center gap-4">
-              <button
-                type="button"
-                onClick={() => setEditingProduct(null)}
-                className="flex-1 border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-700 font-black text-[11px] uppercase tracking-wider py-3.5 rounded-lg transition-colors cursor-pointer"
-              >
-                CANCEL
-              </button>
-
-              <button
-                type="button"
-                onClick={handleSaveSpecifications}
-                disabled={isSaving}
-                className="flex-[1.35] bg-black hover:bg-neutral-900 disabled:opacity-50 text-white font-black text-[11px] uppercase tracking-wider py-3.5 rounded-lg transition-colors cursor-pointer"
-              >
-                {isSaving ? 'SAVING...' : 'SAVE SPECIFICATIONS'}
-              </button>
             </div>
           </div>
         </div>
