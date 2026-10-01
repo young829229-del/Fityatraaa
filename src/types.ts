@@ -204,6 +204,14 @@ export interface Order {
   landmark?: string;
   items: OrderItem[];
   totalAmount: number;
+  productTotal?: number;
+  deliveryCharge?: number;
+  amountPaidNow?: number;
+  amountRemainingOnDelivery?: number;
+  deliveryChargeStatus?: 'Paid' | 'Pending' | 'paid' | 'pending' | 'verified';
+  productPaymentType?: 'Pay on Delivery' | 'Paid Online';
+  deliveryPaymentGateway?: string;
+  screenshotHash?: string;
   discountAmount?: number;
   paymentMethod: string;
   paymentScreenshotUrl?: string;

@@ -314,9 +314,72 @@ export function subscribeToOrders(callback: (orders: Order[]) => void): () => vo
   }
 }
 
+export async function verifyPaymentScreenshotInFirestore(params: {
+  screenshotHash: string;
+  screenshotUrl: string;
+}): Promise<{ verified: boolean; reason?: string }> {
+  const cleanHash = (params.screenshotHash || '').trim();
+  const cleanUrl = (params.screenshotUrl || '').trim();
+
+  if (!cleanUrl) {
+    return {
+      verified: false,
+      reason: 'Please upload a payment screenshot before submitting your order.'
+    };
+  }
+
+  try {
+    // 1. Ensure screenshot is not identical to any configured merchant QR code
+    const paymentSnap = await getDocs(collection(db, PAYMENT_SETTINGS_COLLECTION));
+    for (const d of paymentSnap.docs) {
+      const data = d.data() as Partial<PaymentMethodSetting>;
+      if (data.qrImageUrl && data.qrImageUrl.trim() === cleanUrl) {
+        return {
+          verified: false,
+          reason:
+            'Uploaded image matches the store QR code. Please upload your actual payment confirmation screenshot.'
+        };
+      }
+    }
+
+    // 2. Check existing orders for duplicate screenshot reuse
+    const ordersSnap = await getDocs(collection(db, ORDERS_COLLECTION));
+    for (const d of ordersSnap.docs) {
+      const existing = d.data() as Order;
+      if (existing.status === 'cancelled' || existing.paymentStatus === 'rejected') {
+        continue;
+      }
+      if (cleanHash && existing.screenshotHash && existing.screenshotHash === cleanHash) {
+        return {
+          verified: false,
+          reason: `Duplicate screenshot detected (already used for Order #${existing.id}). Please upload a valid new payment receipt screenshot.`
+        };
+      }
+      if (
+        cleanUrl &&
+        existing.paymentScreenshotUrl &&
+        existing.paymentScreenshotUrl.trim() === cleanUrl
+      ) {
+        return {
+          verified: false,
+          reason: `Duplicate screenshot detected (already used for Order #${existing.id}). Please upload a valid new payment receipt screenshot.`
+        };
+      }
+    }
+
+    return { verified: true };
+  } catch (err) {
+    console.warn('Payment screenshot verification lookup notice:', err);
+    return { verified: true };
+  }
+}
+
 export async function saveOrderToFirestore(orderData: Partial<Order> & { id: string }): Promise<string> {
   const path = `${ORDERS_COLLECTION}/${orderData.id}`;
   try {
+    const isAlreadyVerified =
+      orderData.paymentStatus === 'verified' || orderData.status === 'confirmed';
+
     const fullOrder: Order = stripUndefinedDeep({
       id: orderData.id,
       customerName: orderData.customerName || 'Customer',
@@ -336,12 +399,30 @@ export async function saveOrderToFirestore(orderData: Partial<Order> & { id: str
         image: item.image || ''
       })),
       totalAmount: Number(orderData.totalAmount) || 0,
+      productTotal:
+        orderData.productTotal !== undefined
+          ? Number(orderData.productTotal)
+          : Number(orderData.totalAmount) || 0,
+      deliveryCharge:
+        orderData.deliveryCharge !== undefined ? Number(orderData.deliveryCharge) : 0,
+      amountPaidNow:
+        orderData.amountPaidNow !== undefined ? Number(orderData.amountPaidNow) : 0,
+      amountRemainingOnDelivery:
+        orderData.amountRemainingOnDelivery !== undefined
+          ? Number(orderData.amountRemainingOnDelivery)
+          : 0,
+      deliveryChargeStatus: orderData.deliveryChargeStatus || 'Paid',
+      productPaymentType: orderData.productPaymentType || 'Paid Online',
+      deliveryPaymentGateway: orderData.deliveryPaymentGateway || '',
+      screenshotHash: orderData.screenshotHash || '',
       discountAmount: Number(orderData.discountAmount) || 0,
-      paymentMethod: orderData.paymentMethod || 'cod',
+      paymentMethod: orderData.paymentMethod || 'Cash on Delivery',
       paymentScreenshotUrl: orderData.paymentScreenshotUrl || '',
       paymentStatus: orderData.paymentStatus || 'pending',
       status: orderData.status || 'pending',
-      stockDeducted: false,
+      stockDeducted: isAlreadyVerified,
+      verifiedAt: isAlreadyVerified ? new Date().toISOString() : undefined,
+      verifiedBy: isAlreadyVerified ? 'auto-screenshot-verification' : undefined,
       notes: orderData.notes || '',
       adminNotes: orderData.adminNotes || '',
       createdAt: orderData.createdAt || new Date().toISOString(),
@@ -350,9 +431,16 @@ export async function saveOrderToFirestore(orderData: Partial<Order> & { id: str
     });
 
     await setDoc(doc(db, ORDERS_COLLECTION, orderData.id), fullOrder);
+
+    if (isAlreadyVerified) {
+      await adjustStockForOrder(fullOrder, true).catch((e) =>
+        console.warn('Initial order stock deduction notice:', e)
+      );
+    }
+
     await logAdminActivity(
       'New Order Received',
-      `Order #${fullOrder.id} by ${fullOrder.customerName} (Rs ${fullOrder.totalAmount})`
+      `Order #${fullOrder.id} by ${fullOrder.customerName} (Rs ${fullOrder.totalAmount}, Paid: Rs ${fullOrder.amountPaidNow}, Due on Delivery: Rs ${fullOrder.amountRemainingOnDelivery})`
     );
     return orderData.id;
   } catch (error) {
@@ -654,39 +742,39 @@ export const DEFAULT_PAYMENT_METHODS: PaymentMethodSetting[] = [
     code: 'esewa',
     name: 'eSewa',
     enabled: true,
-    qrEnabled: false,
+    qrEnabled: true,
     accountName: 'FitYatra Nutrition Nepal',
-    accountNumber: '9705283444',
+    accountNumber: '',
     qrImageUrl: '',
-    instructions: 'Digital wallet payment via eSewa ID or QR.',
+    instructions: 'Digital wallet payment via eSewa QR.',
     displayOrder: 1,
-    requiresScreenshot: false
+    requiresScreenshot: true
   },
   {
     id: 'bank',
     code: 'bank',
     name: 'Bank Transfer',
     enabled: true,
-    qrEnabled: false,
+    qrEnabled: true,
     accountName: 'FitYatra Supplement Pvt. Ltd.',
-    accountNumber: '0120100012345601 (Nabil Bank)',
+    accountNumber: '',
     qrImageUrl: '',
-    instructions: 'Direct bank deposit / Fonepay account transfer.',
+    instructions: 'Direct bank deposit / Fonepay QR transfer.',
     displayOrder: 2,
-    requiresScreenshot: false
+    requiresScreenshot: true
   },
   {
     id: 'cod',
     code: 'cod',
-    name: 'Cash on Delivery (COD)',
+    name: 'Cash on Delivery',
     enabled: true,
     qrEnabled: false,
     accountName: 'Pay upon delivery',
-    accountNumber: 'Cash on Delivery',
+    accountNumber: '',
     qrImageUrl: '',
-    instructions: 'Pay with physical cash upon package doorstep delivery.',
+    instructions: 'Pay delivery charge upfront online; pay product total on delivery.',
     displayOrder: 3,
-    requiresScreenshot: false
+    requiresScreenshot: true
   }
 ];
 

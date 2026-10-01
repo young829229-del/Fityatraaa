@@ -382,17 +382,24 @@ export default function AdminOrdersTab({
                           <span className="capitalize font-bold text-neutral-800 block">
                             {order.paymentMethod === 'cod' ? 'Cash on Delivery' : order.paymentMethod}
                           </span>
-                          <span
-                            className={`text-[9px] uppercase font-mono font-bold px-1.5 py-0.2 rounded inline-block ${
-                              order.paymentStatus === 'verified'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : order.paymentStatus === 'rejected'
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-neutral-100 text-neutral-600'
-                            }`}
-                          >
-                            {order.paymentStatus}
-                          </span>
+                          <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                            <span
+                              className={`text-[9px] uppercase font-mono font-bold px-1.5 py-0.2 rounded inline-block ${
+                                order.paymentStatus === 'verified'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : order.paymentStatus === 'rejected'
+                                  ? 'bg-red-100 text-red-800'
+                                  : 'bg-neutral-100 text-neutral-600'
+                              }`}
+                            >
+                              {order.paymentStatus}
+                            </span>
+                            {order.deliveryChargeStatus && (
+                              <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-blue-50 text-blue-700">
+                                Delivery: {order.deliveryChargeStatus}
+                              </span>
+                            )}
+                          </div>
                         </td>
 
                         <td className="py-3 px-4 font-mono text-neutral-500 whitespace-nowrap">
@@ -428,8 +435,17 @@ export default function AdminOrdersTab({
                           </div>
                         </td>
 
-                        <td className="py-3 px-4 font-black text-neutral-950 text-sm whitespace-nowrap">
-                          Rs {order.totalAmount.toLocaleString()}
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <span className="font-black text-neutral-950 text-sm block">
+                            Rs {order.totalAmount.toLocaleString()}
+                          </span>
+                          {(order.amountPaidNow !== undefined ||
+                            order.amountRemainingOnDelivery !== undefined) && (
+                            <span className="text-[10px] font-mono text-neutral-500 block">
+                              Paid: Rs {(order.amountPaidNow ?? 0).toLocaleString()} • Due: Rs{' '}
+                              {(order.amountRemainingOnDelivery ?? 0).toLocaleString()}
+                            </span>
+                          )}
                         </td>
 
                         <td className="py-3 px-4 text-right relative">
@@ -589,6 +605,81 @@ export default function AdminOrdersTab({
                   <span className="text-base font-black text-neutral-950">
                     Rs {activeModalOrder.totalAmount.toLocaleString()}
                   </span>
+                </div>
+              </div>
+
+              {/* Payment & Collection Breakdown (Paid Now vs Remaining on Delivery) */}
+              <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-2 text-xs">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-500 font-bold block">
+                  Payment &amp; Delivery Breakdown
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+                  <div className="bg-white p-2.5 rounded-lg border border-neutral-200/80">
+                    <span className="text-[10px] text-neutral-400 block">Product Amount</span>
+                    <span className="font-black text-neutral-900 block mt-0.5">
+                      Rs{' '}
+                      {(
+                        activeModalOrder.productTotal ?? activeModalOrder.totalAmount
+                      ).toLocaleString()}
+                    </span>
+                    <span className="text-[10px] font-bold text-neutral-600">
+                      {activeModalOrder.productPaymentType ||
+                        (String(activeModalOrder.paymentMethod).toLowerCase().includes('cash') ||
+                        activeModalOrder.paymentMethod === 'cod'
+                          ? 'Pay on Delivery'
+                          : 'Paid Online')}
+                    </span>
+                  </div>
+
+                  <div className="bg-white p-2.5 rounded-lg border border-neutral-200/80">
+                    <span className="text-[10px] text-neutral-400 block">Delivery Charge</span>
+                    <span className="font-black text-neutral-900 block mt-0.5">
+                      Rs {(activeModalOrder.deliveryCharge ?? 0).toLocaleString()}
+                    </span>
+                    <span className="text-[10px] font-bold text-emerald-700">
+                      Status: {activeModalOrder.deliveryChargeStatus || 'Paid'}
+                    </span>
+                  </div>
+
+                  <div className="bg-white p-2.5 rounded-lg border border-emerald-200 bg-emerald-50/40">
+                    <span className="text-[10px] text-emerald-700 font-semibold block">
+                      Amount Already Paid
+                    </span>
+                    <span className="font-black text-emerald-700 text-sm block mt-0.5">
+                      Rs{' '}
+                      {(
+                        activeModalOrder.amountPaidNow ??
+                        (String(activeModalOrder.paymentMethod).toLowerCase().includes('cash') ||
+                        activeModalOrder.paymentMethod === 'cod'
+                          ? activeModalOrder.deliveryCharge ?? 0
+                          : activeModalOrder.totalAmount)
+                      ).toLocaleString()}
+                    </span>
+                    {activeModalOrder.deliveryPaymentGateway && (
+                      <span className="text-[10px] text-emerald-700 font-medium">
+                        via {activeModalOrder.deliveryPaymentGateway}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="bg-white p-2.5 rounded-lg border border-amber-200 bg-amber-50/40">
+                    <span className="text-[10px] text-amber-800 font-semibold block">
+                      Collect on Delivery
+                    </span>
+                    <span className="font-black text-neutral-950 text-sm block mt-0.5">
+                      Rs{' '}
+                      {(
+                        activeModalOrder.amountRemainingOnDelivery ??
+                        (String(activeModalOrder.paymentMethod).toLowerCase().includes('cash') ||
+                        activeModalOrder.paymentMethod === 'cod'
+                          ? activeModalOrder.productTotal ?? activeModalOrder.totalAmount
+                          : 0)
+                      ).toLocaleString()}
+                    </span>
+                    <span className="text-[10px] text-amber-800 font-medium">
+                      Remaining due
+                    </span>
+                  </div>
                 </div>
               </div>
 
