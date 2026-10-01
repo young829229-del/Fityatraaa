@@ -317,9 +317,16 @@ export function subscribeToOrders(callback: (orders: Order[]) => void): () => vo
 export async function verifyPaymentScreenshotInFirestore(params: {
   screenshotHash: string;
   screenshotUrl: string;
+  transactionId?: string;
+  normalizedTransactionId?: string;
 }): Promise<{ verified: boolean; reason?: string }> {
   const cleanHash = (params.screenshotHash || '').trim();
   const cleanUrl = (params.screenshotUrl || '').trim();
+  const rawTxId = (params.transactionId || '').trim();
+  const cleanNormalizedTxId = (
+    params.normalizedTransactionId ||
+    rawTxId.toUpperCase().replace(/[^A-Z0-9]/g, '')
+  ).trim();
 
   if (!cleanUrl) {
     return {
@@ -342,7 +349,7 @@ export async function verifyPaymentScreenshotInFirestore(params: {
       }
     }
 
-    // 2. Check existing orders for duplicate screenshot reuse
+    // 2. Check existing orders for duplicate screenshot hash, URL, or Transaction ID reuse
     const ordersSnap = await getDocs(collection(db, ORDERS_COLLECTION));
     for (const d of ordersSnap.docs) {
       const existing = d.data() as Order;
@@ -365,6 +372,27 @@ export async function verifyPaymentScreenshotInFirestore(params: {
           reason: `Duplicate screenshot detected (already used for Order #${existing.id}). Please upload a valid new payment receipt screenshot.`
         };
       }
+
+      // 3. Transaction / Reference ID duplicate check (prevents cropped/recompressed receipt reuse)
+      if (cleanNormalizedTxId && cleanNormalizedTxId.length >= 3) {
+        const existingNormTx = (
+          existing.normalizedTransactionId ||
+          String(existing.transactionId || '')
+            .trim()
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, '')
+        ).trim();
+        if (existingNormTx && existingNormTx === cleanNormalizedTxId) {
+          return {
+            verified: false,
+            reason: `Duplicate Transaction/Reference ID detected (${
+              rawTxId || cleanNormalizedTxId
+            } was already used on Order #${
+              existing.id
+            }). Cropped or reused payment receipts are not permitted.`
+          };
+        }
+      }
     }
 
     return { verified: true };
@@ -377,8 +405,7 @@ export async function verifyPaymentScreenshotInFirestore(params: {
 export async function saveOrderToFirestore(orderData: Partial<Order> & { id: string }): Promise<string> {
   const path = `${ORDERS_COLLECTION}/${orderData.id}`;
   try {
-    const isAlreadyVerified =
-      orderData.paymentStatus === 'verified' || orderData.status === 'confirmed';
+    const isAlreadyVerified = orderData.paymentStatus === 'verified';
 
     const fullOrder: Order = stripUndefinedDeep({
       id: orderData.id,
@@ -411,18 +438,43 @@ export async function saveOrderToFirestore(orderData: Partial<Order> & { id: str
         orderData.amountRemainingOnDelivery !== undefined
           ? Number(orderData.amountRemainingOnDelivery)
           : 0,
-      deliveryChargeStatus: orderData.deliveryChargeStatus || 'Paid',
+      deliveryChargeStatus:
+        orderData.deliveryChargeStatus || (isAlreadyVerified ? 'Paid' : 'Pending'),
       productPaymentType: orderData.productPaymentType || 'Paid Online',
       deliveryPaymentGateway: orderData.deliveryPaymentGateway || '',
       screenshotHash: orderData.screenshotHash || '',
+      aiVerificationStatus:
+        orderData.aiVerificationStatus ||
+        (isAlreadyVerified ? 'verified' : 'pending_review'),
+      extractedAmount:
+        typeof orderData.extractedAmount === 'number' ? orderData.extractedAmount : undefined,
+      expectedPaymentAmount:
+        typeof orderData.expectedPaymentAmount === 'number'
+          ? orderData.expectedPaymentAmount
+          : Number(orderData.amountPaidNow) || 0,
+      transactionId: orderData.transactionId || '',
+      normalizedTransactionId: orderData.normalizedTransactionId || '',
+      detectedPaymentProvider: orderData.detectedPaymentProvider || '',
+      extractedPaymentStatus: orderData.extractedPaymentStatus || '',
+      extractedRecipient: orderData.extractedRecipient || '',
+      extractedDateTime: orderData.extractedDateTime || '',
+      verificationConfidence:
+        typeof orderData.verificationConfidence === 'number'
+          ? orderData.verificationConfidence
+          : undefined,
+      aiVerificationReasons: Array.isArray(orderData.aiVerificationReasons)
+        ? orderData.aiVerificationReasons
+        : [],
+      aiVerificationSummary: orderData.aiVerificationSummary || '',
+      tamperingDetected: Boolean(orderData.tamperingDetected),
       discountAmount: Number(orderData.discountAmount) || 0,
       paymentMethod: orderData.paymentMethod || 'Cash on Delivery',
       paymentScreenshotUrl: orderData.paymentScreenshotUrl || '',
       paymentStatus: orderData.paymentStatus || 'pending',
-      status: orderData.status || 'pending',
+      status: orderData.status || (isAlreadyVerified ? 'confirmed' : 'pending'),
       stockDeducted: isAlreadyVerified,
       verifiedAt: isAlreadyVerified ? new Date().toISOString() : undefined,
-      verifiedBy: isAlreadyVerified ? 'auto-screenshot-verification' : undefined,
+      verifiedBy: isAlreadyVerified ? 'gemini-vision-ocr' : undefined,
       notes: orderData.notes || '',
       adminNotes: orderData.adminNotes || '',
       createdAt: orderData.createdAt || new Date().toISOString(),
@@ -440,7 +492,7 @@ export async function saveOrderToFirestore(orderData: Partial<Order> & { id: str
 
     await logAdminActivity(
       'New Order Received',
-      `Order #${fullOrder.id} by ${fullOrder.customerName} (Rs ${fullOrder.totalAmount}, Paid: Rs ${fullOrder.amountPaidNow}, Due on Delivery: Rs ${fullOrder.amountRemainingOnDelivery})`
+      `Order #${fullOrder.id} by ${fullOrder.customerName} (Rs ${fullOrder.totalAmount}, AI Status: ${fullOrder.aiVerificationStatus?.toUpperCase()})`
     );
     return orderData.id;
   } catch (error) {
@@ -539,6 +591,8 @@ export async function updateOrderPaymentStatusInFirestore(
     if (paymentStatus === 'verified') {
       updates.verifiedAt = new Date().toISOString();
       updates.verifiedBy = auth.currentUser?.email || 'admin@fityatra.com';
+      updates.aiVerificationStatus = 'verified';
+      updates.deliveryChargeStatus = 'Paid';
       if (!existingOrder || existingOrder.status === 'pending') {
         updates.status = 'confirmed';
       }
@@ -546,6 +600,9 @@ export async function updateOrderPaymentStatusInFirestore(
         await adjustStockForOrder(existingOrder, true);
         updates.stockDeducted = true;
       }
+    } else if (paymentStatus === 'rejected') {
+      updates.aiVerificationStatus = 'rejected';
+      updates.deliveryChargeStatus = 'Pending';
     }
     if (adminNotes !== undefined) {
       updates.adminNotes = adminNotes;

@@ -194,6 +194,29 @@ export interface OrderItem {
   image?: string;
 }
 
+export interface AiReceiptVerificationResult {
+  decision: 'verified' | 'pending_review' | 'rejected';
+  isPaymentReceipt: boolean;
+  isPrePaymentScreen: boolean;
+  imageQuality: 'clear' | 'slightly_blurry' | 'unreadable' | 'cropped_missing_info';
+  paymentProvider: string;
+  extractedAmount: number | null;
+  expectedAmount: number;
+  amountMatches: boolean;
+  extractedStatus: 'completed' | 'pending' | 'processing' | 'failed' | 'cancelled' | 'pre_payment' | 'unknown';
+  extractedStatusRaw: string;
+  transactionId: string;
+  normalizedTransactionId: string;
+  recipient: string;
+  transactionDateTime: string;
+  isPhotoOfScreen: boolean;
+  tamperingDetected: boolean;
+  tamperingReasons: string[];
+  confidence: number;
+  reasons: string[];
+  summaryReason: string;
+}
+
 export interface Order {
   id: string;
   customerName: string;
@@ -212,6 +235,20 @@ export interface Order {
   productPaymentType?: 'Pay on Delivery' | 'Paid Online';
   deliveryPaymentGateway?: string;
   screenshotHash?: string;
+  // AI Screenshot Verification Fields
+  aiVerificationStatus?: 'verified' | 'pending_review' | 'rejected';
+  extractedAmount?: number | null;
+  expectedPaymentAmount?: number;
+  transactionId?: string;
+  normalizedTransactionId?: string;
+  detectedPaymentProvider?: string;
+  extractedPaymentStatus?: string;
+  extractedRecipient?: string;
+  extractedDateTime?: string;
+  verificationConfidence?: number;
+  aiVerificationReasons?: string[];
+  aiVerificationSummary?: string;
+  tamperingDetected?: boolean;
   discountAmount?: number;
   paymentMethod: string;
   paymentScreenshotUrl?: string;

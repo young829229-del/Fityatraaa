@@ -10,9 +10,15 @@ import {
   ArrowRight,
   ShieldCheck,
   AlertCircle,
+  Clock,
   X
 } from 'lucide-react';
-import { CartItem, ShippingRegion, PaymentMethodSetting } from '../types';
+import {
+  CartItem,
+  ShippingRegion,
+  PaymentMethodSetting,
+  AiReceiptVerificationResult
+} from '../types';
 import {
   DEFAULT_PAYMENT_METHODS,
   saveOrderToFirestore,
@@ -33,6 +39,15 @@ async function computeFileSha256(file: File): Promise<string> {
     // fallback below
   }
   return `fp_${file.name}_${file.size}_${file.lastModified}`;
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Could not read image file'));
+    reader.readAsDataURL(file);
+  });
 }
 
 function validateReceiptImageDimensions(file: File): Promise<{ valid: boolean; reason?: string }> {
@@ -152,7 +167,7 @@ function ScreenshotPreviewThumb({
             <span className="truncate">Payment Screenshot Preview</span>
           </div>
           <p className="text-[10px] text-[#6E7485] mt-0.5 leading-snug">
-            Screenshot attached. Click Submit below to verify and confirm your order.
+            Screenshot attached. Click Submit below to run AI receipt &amp; amount verification.
           </p>
         </div>
         <button
@@ -262,8 +277,12 @@ interface PlacedOrderSummary {
   amountPaidNow: number;
   amountRemainingOnDelivery: number;
   totalAmount: number;
-  deliveryChargeStatus: 'Paid';
+  deliveryChargeStatus: 'Paid' | 'Pending';
   productPaymentType: 'Pay on Delivery' | 'Paid Online';
+  aiVerificationStatus: 'verified' | 'pending_review';
+  transactionId?: string;
+  detectedProvider?: string;
+  aiSummaryReason?: string;
 }
 
 interface CartDrawerProps {
@@ -309,6 +328,8 @@ export default function CartDrawer({
 
   const [screenshotUrl, setScreenshotUrl] = useState<string>('');
   const [screenshotLocalPreview, setScreenshotLocalPreview] = useState<string>('');
+  const [screenshotBase64, setScreenshotBase64] = useState<string>('');
+  const [screenshotMimeType, setScreenshotMimeType] = useState<string>('image/jpeg');
   const [screenshotHash, setScreenshotHash] = useState<string>('');
   const [isUploadingScreenshot, setIsUploadingScreenshot] = useState(false);
   const [screenshotProgress, setScreenshotProgress] = useState(0);
@@ -331,7 +352,6 @@ export default function CartDrawer({
     const unsub = subscribeToPaymentSettings((methods) => {
       setAllMethods(methods);
       const activeMethods = methods.filter((m) => m.enabled);
-      // Always ensure both eSewa and Cash on Delivery are available as required
       const nextList = [...(activeMethods.length > 0 ? activeMethods : DEFAULT_PAYMENT_METHODS)];
       const hasEsewa = nextList.some((m) => String(m.code || '').toLowerCase() === 'esewa');
       if (!hasEsewa) {
@@ -392,7 +412,6 @@ export default function CartDrawer({
     paymentMethods.find((m) => m.code === selectedMethodCode) || paymentMethods[0];
   const isCodSelected = String(currentMethod?.code || selectedMethodCode).toLowerCase() === 'cod';
 
-  // Online gateways available for paying the upfront delivery charge when COD is selected
   const onlineGateways = allMethods.filter(
     (m) => String(m.code || '').toLowerCase() !== 'cod' && (m.enabled || m.code === 'esewa')
   );
@@ -406,7 +425,6 @@ export default function CartDrawer({
 
   const getMethodSubtitle = (method: PaymentMethodSetting): string => {
     const code = String(method.code || '').toLowerCase();
-    // Never show phone or bank account numbers in eSewa or Bank
     if (code === 'esewa') {
       return 'Pay full order online via QR';
     }
@@ -422,6 +440,7 @@ export default function CartDrawer({
   const handleClearScreenshot = () => {
     setScreenshotUrl('');
     setScreenshotLocalPreview('');
+    setScreenshotBase64('');
     setScreenshotHash('');
     setFormError(null);
   };
@@ -444,17 +463,20 @@ export default function CartDrawer({
         return;
       }
 
-      // 2. Compute SHA-256 fingerprint for duplicate-screenshot protection
-      const fileHash = await computeFileSha256(file);
+      // 2. Compute SHA-256 fingerprint & read base64 for server-side Gemini Vision verification
+      const [fileHash, dataUrl] = await Promise.all([
+        computeFileSha256(file),
+        readFileAsDataUrl(file)
+      ]);
       const localUrl = URL.createObjectURL(file);
 
-      // 3. Upload screenshot
+      // 3. Upload screenshot to storage
       const result = await uploadFileToStorage(file, 'payment-screenshots', (p) => {
         setScreenshotProgress(p);
       });
 
       if (result.url) {
-        // 4. Immediately check duplicate screenshot protection against existing orders
+        // 4. Immediately check duplicate file hash & store-QR match against Firestore
         const verifyCheck = await verifyPaymentScreenshotInFirestore({
           screenshotHash: fileHash,
           screenshotUrl: result.url
@@ -462,9 +484,7 @@ export default function CartDrawer({
 
         if (!verifyCheck.verified) {
           URL.revokeObjectURL(localUrl);
-          setScreenshotUrl('');
-          setScreenshotLocalPreview('');
-          setScreenshotHash('');
+          handleClearScreenshot();
           setFormError(
             verifyCheck.reason || 'This payment screenshot could not be verified.'
           );
@@ -473,6 +493,8 @@ export default function CartDrawer({
 
         setScreenshotUrl(result.url);
         setScreenshotLocalPreview(localUrl);
+        setScreenshotBase64(dataUrl);
+        setScreenshotMimeType(file.type || 'image/jpeg');
         setScreenshotHash(fileHash);
       }
     } catch (err) {
@@ -500,7 +522,6 @@ export default function CartDrawer({
       return;
     }
 
-    // Require payment screenshot for both Full Online (eSewa/Bank) and COD upfront delivery charge
     if (!screenshotUrl) {
       if (isCodSelected) {
         setFormError(
@@ -524,20 +545,80 @@ export default function CartDrawer({
     setIsSubmitting(true);
 
     try {
-      // Run payment verification & duplicate-screenshot protection before confirming order
-      const verification = await verifyPaymentScreenshotInFirestore({
-        screenshotHash,
-        screenshotUrl
+      const orderItemsPayload = items.map((item) => ({
+        productId: item.product.id,
+        productName: item.product.name,
+        quantity: item.quantity,
+        price: item.totalPrice || item.product.price * item.quantity,
+        selectedVariant: item.selectedVariant,
+        selectedBundle: item.selectedBundle?.title,
+        selectedFlavors: item.selectedFlavors,
+        image: item.product.image
+      }));
+
+      // 1. Server-side Gemini Vision OCR & Receipt Verification
+      const imagePayload = screenshotBase64 || screenshotUrl;
+      const aiResponse = await fetch('/api/verify-payment-screenshot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: imagePayload,
+          mimeType: screenshotMimeType,
+          paymentMode: isCodSelected ? 'cod' : 'online',
+          selectedGatewayName: isCodSelected
+            ? activeCodOnlineGateway?.name || 'eSewa'
+            : currentMethod?.name || 'eSewa',
+          region: selectedRegion,
+          items: orderItemsPayload
+        })
       });
 
-      if (!verification.verified) {
+      if (!aiResponse.ok) {
+        const errBody = await aiResponse.json().catch(() => ({}));
+        throw new Error(errBody.error || 'Server verification service encountered an error.');
+      }
+
+      const aiResult = (await aiResponse.json()) as AiReceiptVerificationResult;
+
+      // 2. If AI rejected the screenshot (not a receipt, wrong amount, failed status, cropped missing info, etc.)
+      if (aiResult.decision === 'rejected') {
         setFormError(
-          verification.reason ||
-            'Payment screenshot verification failed. Please upload a valid payment receipt.'
+          aiResult.summaryReason ||
+            aiResult.reasons?.[0] ||
+            'Payment screenshot verification failed. Please upload a valid completed payment receipt.'
         );
         setIsSubmitting(false);
         return;
       }
+
+      // 3. Check Firestore for duplicate SHA-256 hash AND duplicate extracted Transaction ID
+      const duplicateCheck = await verifyPaymentScreenshotInFirestore({
+        screenshotHash,
+        screenshotUrl,
+        transactionId: aiResult.transactionId,
+        normalizedTransactionId: aiResult.normalizedTransactionId
+      });
+
+      if (!duplicateCheck.verified) {
+        setFormError(
+          duplicateCheck.reason ||
+            'Duplicate payment receipt detected. Please upload a genuine new payment screenshot.'
+        );
+        setIsSubmitting(false);
+        return;
+      }
+
+      // 4. Three-Way Decision Routing (Verified vs. Pending Admin Review)
+      const isAutoVerified = aiResult.decision === 'verified';
+      const finalPaymentStatus: 'verified' | 'submitted' = isAutoVerified
+        ? 'verified'
+        : 'submitted';
+      const finalOrderStatus: 'confirmed' | 'pending' = isAutoVerified
+        ? 'confirmed'
+        : 'pending';
+      const finalDeliveryChargeStatus: 'Paid' | 'Pending' = isAutoVerified
+        ? 'Paid'
+        : 'Pending';
 
       const regionPrefix =
         selectedRegion === 'KTM_VALLEY'
@@ -556,7 +637,6 @@ export default function CartDrawer({
       const finalPaymentMethod = isCodSelected
         ? 'Cash on Delivery'
         : currentMethod?.name || 'eSewa';
-      const deliveryChargeStatus: 'Paid' = 'Paid';
       const productPaymentType: 'Pay on Delivery' | 'Paid Online' = isCodSelected
         ? 'Pay on Delivery'
         : 'Paid Online';
@@ -570,32 +650,40 @@ export default function CartDrawer({
         phone: phone.trim(),
         address: address.trim(),
         region: selectedRegion,
-        items: items.map((item) => ({
-          productId: item.product.id,
-          productName: item.product.name,
-          quantity: item.quantity,
-          price: item.totalPrice || item.product.price * item.quantity,
-          selectedVariant: item.selectedVariant,
-          selectedBundle: item.selectedBundle?.title,
-          selectedFlavors: item.selectedFlavors,
-          image: item.product.image
-        })),
+        items: orderItemsPayload,
         totalAmount: total,
         productTotal: subtotal,
         deliveryCharge: shippingFee,
         amountPaidNow: amountToPayNow,
         amountRemainingOnDelivery,
-        deliveryChargeStatus,
+        deliveryChargeStatus: finalDeliveryChargeStatus,
         productPaymentType,
         deliveryPaymentGateway: usedOnlineGateway,
         screenshotHash,
+        aiVerificationStatus: aiResult.decision,
+        extractedAmount: aiResult.extractedAmount,
+        expectedPaymentAmount: aiResult.expectedAmount,
+        transactionId: aiResult.transactionId,
+        normalizedTransactionId: aiResult.normalizedTransactionId,
+        detectedPaymentProvider: aiResult.paymentProvider,
+        extractedPaymentStatus: aiResult.extractedStatusRaw || aiResult.extractedStatus,
+        extractedRecipient: aiResult.recipient,
+        extractedDateTime: aiResult.transactionDateTime,
+        verificationConfidence: aiResult.confidence,
+        aiVerificationReasons: aiResult.reasons,
+        aiVerificationSummary: aiResult.summaryReason,
+        tamperingDetected: aiResult.tamperingDetected,
         paymentMethod: finalPaymentMethod,
         paymentScreenshotUrl: screenshotUrl,
-        paymentStatus: 'verified',
-        status: 'confirmed',
+        paymentStatus: finalPaymentStatus,
+        status: finalOrderStatus,
         notes: isCodSelected
-          ? `COD Order: Delivery charge Rs. ${shippingFee} paid via ${usedOnlineGateway}. Remaining Rs. ${subtotal} to collect on delivery.`
-          : `Full Online Order: Rs. ${total} paid via ${usedOnlineGateway}.`
+          ? `COD Order: Upfront delivery charge Rs. ${shippingFee} (${finalDeliveryChargeStatus}) via ${
+              aiResult.paymentProvider || usedOnlineGateway
+            }. Remaining Rs. ${subtotal} to collect on delivery.`
+          : `Full Online Order: Rs. ${total} via ${
+              aiResult.paymentProvider || usedOnlineGateway
+            } (${finalPaymentStatus.toUpperCase()}).`
       });
 
       setPlacedOrderSummary({
@@ -606,8 +694,12 @@ export default function CartDrawer({
         amountPaidNow: amountToPayNow,
         amountRemainingOnDelivery,
         totalAmount: total,
-        deliveryChargeStatus,
-        productPaymentType
+        deliveryChargeStatus: finalDeliveryChargeStatus,
+        productPaymentType,
+        aiVerificationStatus: isAutoVerified ? 'verified' : 'pending_review',
+        transactionId: aiResult.transactionId,
+        detectedProvider: aiResult.paymentProvider,
+        aiSummaryReason: aiResult.summaryReason
       });
 
       setStep('submit');
@@ -616,9 +708,13 @@ export default function CartDrawer({
       } else {
         items.forEach((item) => onRemoveItem(item.product.id, item.selectedVariant));
       }
-    } catch (err) {
-      console.error('Failed to place order:', err);
-      setFormError('Could not submit order. Please try again.');
+    } catch (err: any) {
+      console.error('Failed to verify/place order:', err);
+      setFormError(
+        err instanceof Error
+          ? err.message
+          : 'Could not verify payment screenshot. Please try again.'
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -626,7 +722,11 @@ export default function CartDrawer({
 
   const getWhatsAppLink = (summary: PlacedOrderSummary) => {
     const text = encodeURIComponent(
-      `Namaste FitYatra! I placed order #${summary.orderId}.\nName: ${fullName}\nPhone: ${phone}\nAddress: ${address}\nPayment Method: ${summary.paymentMethod}\nProduct Total: Rs. ${summary.productTotal.toLocaleString(
+      `Namaste FitYatra! I placed order #${summary.orderId}.\nName: ${fullName}\nPhone: ${phone}\nAddress: ${address}\nPayment Method: ${summary.paymentMethod}\nVerification Status: ${
+        summary.aiVerificationStatus === 'verified'
+          ? 'Verified'
+          : 'Pending Admin Review'
+      }${summary.transactionId ? `\nTransaction ID: ${summary.transactionId}` : ''}\nProduct Total: Rs. ${summary.productTotal.toLocaleString(
         'en-US'
       )} (${summary.productPaymentType})\nDelivery Charge: Rs. ${summary.deliveryCharge.toLocaleString(
         'en-US'
@@ -957,7 +1057,7 @@ export default function CartDrawer({
           </div>
         )}
 
-        {/* STEP 3: PAYMENT (Select Payment Method -> Expand Inside Checkout -> Verify & Submit) */}
+        {/* STEP 3: PAYMENT (Select Payment Method -> Expand Inside Checkout -> AI Verify & Submit) */}
         {step === 'payment' && (
           <div className="flex-1 bg-white rounded-t-[34px] pt-3 px-6 pb-7 flex flex-col justify-between overflow-y-auto shadow-[0_-12px_40px_rgba(0,0,0,0.14)]">
             <div>
@@ -977,7 +1077,6 @@ export default function CartDrawer({
                   const isMethodCod = methodCode === 'cod';
                   const subtitle = getMethodSubtitle(method);
 
-                  // Determine which QR image to show when this method is expanded
                   const qrSourceForCod =
                     activeCodOnlineGateway?.qrImageUrl || method.qrImageUrl || '';
                   const qrLabelForCod = activeCodOnlineGateway?.name || 'eSewa';
@@ -1117,7 +1216,7 @@ export default function CartDrawer({
                                   )}
                                   <span>
                                     {isUploadingScreenshot
-                                      ? `Uploading & Verifying (${screenshotProgress}%)...`
+                                      ? `Uploading (${screenshotProgress}%)...`
                                       : screenshotUrl
                                       ? 'Change Payment Screenshot'
                                       : 'Upload Payment Screenshot'}
@@ -1180,7 +1279,7 @@ export default function CartDrawer({
                                 )}
                                 <span>
                                   {isUploadingScreenshot
-                                    ? `Uploading & Verifying (${screenshotProgress}%)...`
+                                    ? `Uploading (${screenshotProgress}%)...`
                                     : screenshotUrl
                                     ? 'Change Payment Screenshot'
                                     : 'Upload Payment Screenshot'}
@@ -1246,28 +1345,49 @@ export default function CartDrawer({
                   <CheckCircle2 className="w-4 h-4 text-[#F5B041]" />
                 )}
                 <span className="text-[14px] font-semibold">
-                  {isSubmitting ? 'Verifying...' : 'Submit'}
+                  {isSubmitting ? 'Verifying Receipt...' : 'Submit'}
                 </span>
               </button>
             </div>
           </div>
         )}
 
-        {/* STEP 4: SUBMIT (Order Confirmed) */}
+        {/* STEP 4: SUBMIT (Order Confirmed / Pending Admin Review) */}
         {step === 'submit' && placedOrderSummary && (
           <div className="flex-1 bg-white rounded-t-[34px] pt-3 px-6 pb-7 flex flex-col justify-between overflow-y-auto shadow-[0_-12px_40px_rgba(0,0,0,0.14)]">
             <div className="my-auto py-4 text-center space-y-4">
-              <div className="w-16 h-16 bg-[#121726] text-[#F5B041] rounded-full flex items-center justify-center mx-auto shadow-md">
-                <CheckCircle2 className="w-9 h-9" />
+              <div
+                className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto shadow-md ${
+                  placedOrderSummary.aiVerificationStatus === 'verified'
+                    ? 'bg-[#121726] text-[#F5B041]'
+                    : 'bg-amber-500 text-white'
+                }`}
+              >
+                {placedOrderSummary.aiVerificationStatus === 'verified' ? (
+                  <CheckCircle2 className="w-9 h-9" />
+                ) : (
+                  <Clock className="w-9 h-9" />
+                )}
               </div>
 
               <div>
                 <h3 className="text-[22px] font-semibold text-[#181B25]">
                   Order #{placedOrderSummary.orderId}
                 </h3>
-                <p className="text-xs text-emerald-700 font-semibold mt-1">
-                  Payment Verified ✓ • Order Confirmed
-                </p>
+                {placedOrderSummary.aiVerificationStatus === 'verified' ? (
+                  <p className="text-xs text-emerald-700 font-semibold mt-1">
+                    ✅ Payment Verified • Order Confirmed
+                  </p>
+                ) : (
+                  <p className="text-xs text-amber-700 font-semibold mt-1">
+                    🟡 Submitted • Pending Admin Review
+                  </p>
+                )}
+                {placedOrderSummary.aiSummaryReason && (
+                  <p className="text-[11px] text-[#6E7485] mt-1 px-2">
+                    {placedOrderSummary.aiSummaryReason}
+                  </p>
+                )}
               </div>
 
               <div className="bg-[#F8F8FA] rounded-[22px] p-4 text-left text-xs space-y-2 border border-neutral-200/70">
@@ -1291,9 +1411,23 @@ export default function CartDrawer({
                     {placedOrderSummary.paymentMethod}
                   </span>
                 </div>
+                {placedOrderSummary.transactionId && (
+                  <div className="flex justify-between">
+                    <span className="text-[#9EA3B0]">Transaction ID</span>
+                    <span className="font-mono font-bold text-[#181B25]">
+                      {placedOrderSummary.transactionId}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-[#9EA3B0]">Delivery Charge</span>
-                  <span className="font-bold text-emerald-700">
+                  <span
+                    className={`font-bold ${
+                      placedOrderSummary.deliveryChargeStatus === 'Paid'
+                        ? 'text-emerald-700'
+                        : 'text-amber-700'
+                    }`}
+                  >
                     Rs. {placedOrderSummary.deliveryCharge.toLocaleString('en-US')} (
                     {placedOrderSummary.deliveryChargeStatus})
                   </span>
@@ -1306,7 +1440,7 @@ export default function CartDrawer({
                   </span>
                 </div>
                 <div className="flex justify-between pt-2 border-t border-neutral-200/60">
-                  <span className="text-[#181B25] font-semibold">Amount Already Paid</span>
+                  <span className="text-[#181B25] font-semibold">Amount Submitted</span>
                   <span className="font-extrabold text-emerald-700">
                     Rs. {placedOrderSummary.amountPaidNow.toLocaleString('en-US')}
                   </span>

@@ -134,9 +134,23 @@ export default function AdminOrdersTab({
         paymentStatus === 'verified' && activeModalOrder.status === 'pending'
           ? 'confirmed'
           : activeModalOrder.status;
+      const nextAiStatus =
+        paymentStatus === 'verified'
+          ? 'verified'
+          : paymentStatus === 'rejected'
+          ? 'rejected'
+          : activeModalOrder.aiVerificationStatus;
+      const nextDeliveryStatus =
+        paymentStatus === 'verified'
+          ? 'Paid'
+          : paymentStatus === 'rejected'
+          ? 'Pending'
+          : activeModalOrder.deliveryChargeStatus;
       setActiveModalOrder({
         ...activeModalOrder,
         paymentStatus,
+        aiVerificationStatus: nextAiStatus,
+        deliveryChargeStatus: nextDeliveryStatus,
         status: nextStatus,
         adminNotes: adminNoteInput
       });
@@ -389,10 +403,14 @@ export default function AdminOrdersTab({
                                   ? 'bg-emerald-100 text-emerald-800'
                                   : order.paymentStatus === 'rejected'
                                   ? 'bg-red-100 text-red-800'
-                                  : 'bg-neutral-100 text-neutral-600'
+                                  : 'bg-amber-100 text-amber-800'
                               }`}
                             >
-                              {order.paymentStatus}
+                              {order.paymentStatus === 'verified'
+                                ? '✅ Verified'
+                                : order.paymentStatus === 'rejected'
+                                ? '❌ Rejected'
+                                : '🟡 Pending Review'}
                             </span>
                             {order.deliveryChargeStatus && (
                               <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-blue-50 text-blue-700">
@@ -400,6 +418,11 @@ export default function AdminOrdersTab({
                               </span>
                             )}
                           </div>
+                          {order.transactionId && (
+                            <span className="text-[10px] font-mono text-neutral-400 block mt-0.5 truncate max-w-[140px]">
+                              Ref: {order.transactionId}
+                            </span>
+                          )}
                         </td>
 
                         <td className="py-3 px-4 font-mono text-neutral-500 whitespace-nowrap">
@@ -756,13 +779,35 @@ export default function AdminOrdersTab({
                 </div>
               </div>
 
-              {/* Payment Screenshot (if uploaded) */}
+              {/* AI Payment Screenshot Verification & Proof Section */}
               {activeModalOrder.paymentScreenshotUrl && (
-                <div className="border border-neutral-200 rounded-xl p-4 space-y-2 bg-neutral-50">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black uppercase text-neutral-900">
-                      Payment Proof Screenshot
-                    </span>
+                <div className="border border-neutral-200 rounded-xl p-4 space-y-4 bg-neutral-50">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black uppercase text-neutral-900">
+                        AI Payment Screenshot Verification
+                      </span>
+                      <span
+                        className={`text-[10px] font-mono font-black uppercase px-2 py-0.5 rounded-full ${
+                          activeModalOrder.aiVerificationStatus === 'verified' ||
+                          activeModalOrder.paymentStatus === 'verified'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : activeModalOrder.aiVerificationStatus === 'rejected' ||
+                              activeModalOrder.paymentStatus === 'rejected'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
+                        {activeModalOrder.aiVerificationStatus === 'verified' ||
+                        activeModalOrder.paymentStatus === 'verified'
+                          ? '✅ VERIFIED'
+                          : activeModalOrder.aiVerificationStatus === 'rejected' ||
+                            activeModalOrder.paymentStatus === 'rejected'
+                          ? '❌ REJECTED'
+                          : '🟡 PENDING ADMIN REVIEW'}
+                      </span>
+                    </div>
+
                     <button
                       type="button"
                       onClick={() =>
@@ -771,19 +816,174 @@ export default function AdminOrdersTab({
                       className="text-[11px] font-bold text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
                     >
                       <Eye className="w-3.5 h-3.5" />
-                      <span>View Full Size</span>
+                      <span>View Full Size Screenshot</span>
                     </button>
                   </div>
-                  <div className="w-36 h-36 border border-neutral-300 rounded-lg overflow-hidden bg-white">
-                    <ResolvedOrderScreenshot
-                      src={activeModalOrder.paymentScreenshotUrl}
-                      alt="Payment Screenshot"
-                      className="w-full h-full object-contain cursor-pointer"
-                      onClick={() =>
-                        setScreenshotModalUrl(activeModalOrder.paymentScreenshotUrl || null)
-                      }
-                    />
+
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    {/* Screenshot Thumbnail */}
+                    <div className="w-36 h-44 border border-neutral-300 rounded-lg overflow-hidden bg-white shrink-0">
+                      <ResolvedOrderScreenshot
+                        src={activeModalOrder.paymentScreenshotUrl}
+                        alt="Payment Screenshot"
+                        className="w-full h-full object-contain cursor-pointer"
+                        onClick={() =>
+                          setScreenshotModalUrl(activeModalOrder.paymentScreenshotUrl || null)
+                        }
+                      />
+                    </div>
+
+                    {/* Extracted OCR & AI Verification Details */}
+                    <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+                      <div className="bg-white p-2.5 rounded-lg border border-neutral-200">
+                        <span className="text-[10px] text-neutral-400 block">
+                          Extracted Amount
+                        </span>
+                        <span className="font-black text-neutral-900 block mt-0.5">
+                          {typeof activeModalOrder.extractedAmount === 'number'
+                            ? `Rs ${activeModalOrder.extractedAmount.toLocaleString()}`
+                            : 'Not detected'}
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-lg border border-neutral-200">
+                        <span className="text-[10px] text-neutral-400 block">
+                          Expected Amount
+                        </span>
+                        <span className="font-black text-neutral-900 block mt-0.5">
+                          Rs{' '}
+                          {(
+                            activeModalOrder.expectedPaymentAmount ??
+                            activeModalOrder.amountPaidNow ??
+                            activeModalOrder.totalAmount
+                          ).toLocaleString()}
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-lg border border-neutral-200">
+                        <span className="text-[10px] text-neutral-400 block">
+                          Transaction / Ref ID
+                        </span>
+                        <span className="font-mono font-bold text-neutral-900 block mt-0.5 truncate">
+                          {activeModalOrder.transactionId || 'Not detected'}
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-lg border border-neutral-200">
+                        <span className="text-[10px] text-neutral-400 block">
+                          Payment Provider
+                        </span>
+                        <span className="font-bold text-neutral-900 block mt-0.5">
+                          {activeModalOrder.detectedPaymentProvider ||
+                            activeModalOrder.deliveryPaymentGateway ||
+                            activeModalOrder.paymentMethod}
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-lg border border-neutral-200">
+                        <span className="text-[10px] text-neutral-400 block">
+                          Receipt Payment Status
+                        </span>
+                        <span className="font-bold text-emerald-700 block mt-0.5 uppercase">
+                          {activeModalOrder.extractedPaymentStatus || activeModalOrder.paymentStatus}
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-lg border border-neutral-200">
+                        <span className="text-[10px] text-neutral-400 block">
+                          AI Confidence
+                        </span>
+                        <span className="font-black text-neutral-900 block mt-0.5">
+                          {typeof activeModalOrder.verificationConfidence === 'number'
+                            ? `${activeModalOrder.verificationConfidence}%`
+                            : '—'}
+                        </span>
+                      </div>
+
+                      {(activeModalOrder.extractedRecipient ||
+                        activeModalOrder.extractedDateTime) && (
+                        <div className="col-span-2 sm:col-span-3 bg-white p-2.5 rounded-lg border border-neutral-200 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                          {activeModalOrder.extractedRecipient && (
+                            <span>
+                              <strong className="text-neutral-500">Recipient:</strong>{' '}
+                              <span className="font-bold text-neutral-900">
+                                {activeModalOrder.extractedRecipient}
+                              </span>
+                            </span>
+                          )}
+                          {activeModalOrder.extractedDateTime && (
+                            <span>
+                              <strong className="text-neutral-500">Receipt Date/Time:</strong>{' '}
+                              <span className="font-mono text-neutral-800">
+                                {activeModalOrder.extractedDateTime}
+                              </span>
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
+
+                  {/* AI Reasons / Flags */}
+                  {(activeModalOrder.aiVerificationSummary ||
+                    (activeModalOrder.aiVerificationReasons &&
+                      activeModalOrder.aiVerificationReasons.length > 0) ||
+                    activeModalOrder.tamperingDetected) && (
+                    <div
+                      className={`p-3 rounded-lg border text-xs space-y-1 ${
+                        activeModalOrder.tamperingDetected
+                          ? 'bg-red-50 border-red-200 text-red-900'
+                          : activeModalOrder.aiVerificationStatus === 'pending_review'
+                          ? 'bg-amber-50 border-amber-200 text-amber-900'
+                          : 'bg-white border-neutral-200 text-neutral-700'
+                      }`}
+                    >
+                      <span className="text-[10px] font-mono uppercase font-black block">
+                        AI Analysis &amp; Flags
+                      </span>
+                      {activeModalOrder.aiVerificationReasons &&
+                      activeModalOrder.aiVerificationReasons.length > 0 ? (
+                        <ul className="list-disc pl-4 space-y-0.5 text-[11px]">
+                          {activeModalOrder.aiVerificationReasons.map((reason, idx) => (
+                            <li key={idx}>{reason}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-[11px]">{activeModalOrder.aiVerificationSummary}</p>
+                      )}
+                      <p className="text-[10px] text-neutral-400 pt-1">
+                        Note: AI vision analyzes screenshot text and layout only; always verify bank/wallet settlement for high-value or flagged orders.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Quick Manual Approve / Reject Bar for Pending Orders */}
+                  {activeModalOrder.paymentStatus !== 'verified' && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-neutral-200">
+                      <span className="text-[11px] font-bold text-amber-800">
+                        Manual Admin Review Action:
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handlePaymentStatusChange('verified')}
+                          disabled={isUpdating}
+                          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>Approve &amp; Verify Payment</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handlePaymentStatusChange('rejected')}
+                          disabled={isUpdating}
+                          className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg cursor-pointer"
+                        >
+                          Reject Payment
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
