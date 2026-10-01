@@ -15,6 +15,31 @@ import {
   Check
 } from 'lucide-react';
 import { Order } from '../../types';
+import { useResolvedMediaUrl } from '../../services/storageService';
+
+function ResolvedOrderScreenshot({
+  src,
+  alt,
+  className,
+  onClick
+}: {
+  src: string;
+  alt: string;
+  className?: string;
+  onClick?: () => void;
+}) {
+  const resolved = useResolvedMediaUrl(src);
+  if (!resolved) return null;
+  return (
+    <img
+      src={resolved}
+      alt={alt}
+      referrerPolicy="no-referrer"
+      className={className}
+      onClick={onClick}
+    />
+  );
+}
 
 interface AdminOrdersTabProps {
   orders: Order[];
@@ -659,10 +684,9 @@ export default function AdminOrdersTab({
                     </button>
                   </div>
                   <div className="w-36 h-36 border border-neutral-300 rounded-lg overflow-hidden bg-white">
-                    <img
+                    <ResolvedOrderScreenshot
                       src={activeModalOrder.paymentScreenshotUrl}
                       alt="Payment Screenshot"
-                      referrerPolicy="no-referrer"
                       className="w-full h-full object-contain cursor-pointer"
                       onClick={() =>
                         setScreenshotModalUrl(activeModalOrder.paymentScreenshotUrl || null)
@@ -788,10 +812,9 @@ export default function AdminOrdersTab({
             >
               <X className="w-5 h-5" />
             </button>
-            <img
+            <ResolvedOrderScreenshot
               src={screenshotModalUrl}
               alt="Proof Full Size"
-              referrerPolicy="no-referrer"
               className="w-full h-auto max-h-[85vh] object-contain rounded-lg"
             />
           </div>

@@ -449,13 +449,15 @@ export default function AdminBannersTab({
             <div className="pt-1">
               <ImageUploader
                 label="Video Cover / Poster Thumbnail Image"
-                value={redefinePosterUrl}
-                onChange={(url) => {
+                images={redefinePosterUrl ? [redefinePosterUrl] : []}
+                multiple={false}
+                maxFiles={1}
+                onChange={(urls) => {
                   setSettingsDirty(true);
-                  setRedefinePosterUrl(url);
+                  setRedefinePosterUrl(urls[0] || '');
                 }}
                 folder="banners/posters"
-                aspectRatio="banner"
+                aspectRatio="wide"
                 helperText="Displayed while the video loads or before playback starts."
               />
             </div>
@@ -524,14 +526,17 @@ export default function AdminBannersTab({
             {/* Banner Image Uploader */}
             <ImageUploader
               label="Banner Graphic (Uploads to Firebase Storage)"
-              value={banner.imageUrl}
-              onChange={async (url) => {
+              images={banner.imageUrl ? [banner.imageUrl] : []}
+              multiple={false}
+              maxFiles={1}
+              onChange={async (urls) => {
+                const url = urls[0] || '';
                 const updated = { ...banner, imageUrl: url };
                 handleFieldChange(banner.id, 'imageUrl', url);
                 await handleSaveSingleBanner(updated);
               }}
               folder="banners"
-              aspectRatio="banner"
+              aspectRatio="wide"
             />
 
             {/* Optional Banner Background Video */}

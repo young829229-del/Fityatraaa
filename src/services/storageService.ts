@@ -148,7 +148,7 @@ export async function sanitizeMediaUrlForFirestore(
     );
   }
 
-  if (trimmed.startsWith('data:') && trimmed.length > 60 * 1024) {
+  if (trimmed.startsWith('data:') && trimmed.length > 350 * 1024) {
     const mimeMatch = trimmed.match(/^data:([^;]+);base64,/);
     const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
     const syntheticFile = new File([], label, { type: mimeType });
@@ -339,9 +339,21 @@ export async function uploadFileToStorage(
 
   // Persistent Firestore storage helper
   const fallbackStoreInFirestore = async (): Promise<UploadResult> => {
-    if (onProgress) onProgress(10);
-    if (!isVideo && file.type.startsWith('image/')) {
+    if (onProgress) onProgress(25);
+    const isImageFile =
+      !isVideo &&
+      (file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(file.name));
+
+    if (isImageFile) {
       const compressedDataUrl = await compressImageToDataUrl(file);
+      if (compressedDataUrl.length <= 350 * 1024) {
+        if (onProgress) onProgress(100);
+        return {
+          url: compressedDataUrl,
+          path: storagePath,
+          name: file.name
+        };
+      }
       const mediaUri = await saveDataUrlToFirestoreChunks(compressedDataUrl, file, onProgress);
       return {
         url: mediaUri,
@@ -358,6 +370,11 @@ export async function uploadFileToStorage(
       name: file.name
     };
   };
+
+  // For images, compress and store directly so QR codes, screenshots, and product photos save instantaneously
+  if (!isVideo && (file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(file.name))) {
+    return await fallbackStoreInFirestore();
+  }
 
   try {
     if (!storage.app.options.storageBucket) {

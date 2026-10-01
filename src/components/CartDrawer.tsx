@@ -11,7 +11,11 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { CartItem, ShippingRegion, PaymentMethodSetting } from '../types';
-import { saveOrderToFirestore, subscribeToPaymentSettings } from '../services/firestoreService';
+import {
+  DEFAULT_PAYMENT_METHODS,
+  saveOrderToFirestore,
+  subscribeToPaymentSettings
+} from '../services/firestoreService';
 import { uploadFileToStorage, useResolvedMediaUrl } from '../services/storageService';
 
 function CartProductThumb({ src, alt }: { src: string; alt: string }) {
@@ -121,7 +125,7 @@ export function PaymentGatewayBadge({
         isSelected ? 'bg-white/15 text-white' : 'bg-white text-[#181B25] border border-neutral-200'
       }`}
     >
-      {method.code.slice(0, 5)}
+      {String(method.code || method.name || 'PAY').slice(0, 5)}
     </div>
   );
 }
@@ -156,7 +160,9 @@ export default function CartDrawer({
   const [activeDeleteKey, setActiveDeleteKey] = useState<string | null>(null);
 
   // Customer & Payment state
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodSetting[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodSetting[]>(
+    DEFAULT_PAYMENT_METHODS
+  );
   const [selectedMethodCode, setSelectedMethodCode] = useState<string>('esewa');
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
@@ -183,12 +189,15 @@ export default function CartDrawer({
   useEffect(() => {
     const unsub = subscribeToPaymentSettings((methods) => {
       const activeMethods = methods.filter((m) => m.enabled);
-      setPaymentMethods(activeMethods);
-      if (activeMethods.length > 0 && !activeMethods.some((m) => m.code === selectedMethodCode)) {
-        const esewaMethod = activeMethods.find(
-          (m) => m.code.toLowerCase() === 'esewa' || m.name.toLowerCase().includes('esewa')
+      const nextList = activeMethods.length > 0 ? activeMethods : DEFAULT_PAYMENT_METHODS;
+      setPaymentMethods(nextList);
+      if (nextList.length > 0 && !nextList.some((m) => m.code === selectedMethodCode)) {
+        const esewaMethod = nextList.find(
+          (m) =>
+            String(m.code || '').toLowerCase() === 'esewa' ||
+            String(m.name || '').toLowerCase().includes('esewa')
         );
-        setSelectedMethodCode(esewaMethod ? esewaMethod.code : activeMethods[0].code);
+        setSelectedMethodCode(esewaMethod ? esewaMethod.code : nextList[0].code);
       }
     });
     return () => unsub();
@@ -659,7 +668,8 @@ export default function CartDrawer({
               {/* Payment Gateways List (eSewa + Admin-configured methods) */}
               <div className="space-y-3">
                 {paymentMethods.map((method) => {
-                  const isSelected = selectedMethodCode === method.code;
+                  const isSelected =
+                    currentMethod?.id === method.id || currentMethod?.code === method.code;
                   const subtitle =
                     method.accountNumber ||
                     method.accountName ||
@@ -710,12 +720,14 @@ export default function CartDrawer({
 
               {/* Active Gateway Details (QR & Screenshot Upload controlled by Admin toggles) */}
               {currentMethod &&
-                ((currentMethod.qrEnabled && Boolean(currentMethod.qrImageUrl)) ||
+                (((currentMethod.qrEnabled ?? Boolean(currentMethod.qrImageUrl)) &&
+                  Boolean(currentMethod.qrImageUrl)) ||
                   currentMethod.requiresScreenshot) && (
                   <div className="mt-3.5 bg-[#F8F8FA] rounded-[22px] p-3.5 space-y-2.5 border border-[#ECEEF2]">
-                    {currentMethod.qrEnabled && currentMethod.qrImageUrl && (
-                      <ResolvedQrImage src={currentMethod.qrImageUrl} />
-                    )}
+                    {(currentMethod.qrEnabled ?? Boolean(currentMethod.qrImageUrl)) &&
+                      currentMethod.qrImageUrl && (
+                        <ResolvedQrImage src={currentMethod.qrImageUrl} />
+                      )}
 
                     {currentMethod.requiresScreenshot && (
                       <label className="w-full flex items-center justify-center gap-2 py-2.5 px-3 bg-white hover:bg-neutral-50 text-[#181B25] font-semibold text-[11px] rounded-xl border border-neutral-200 cursor-pointer transition-colors">

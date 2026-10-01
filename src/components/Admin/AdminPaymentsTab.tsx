@@ -1,17 +1,25 @@
-import { useState, ChangeEvent } from 'react';
+import { useState, useEffect, ChangeEvent } from 'react';
 import { CreditCard, Box, Check, QrCode, Upload, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { PaymentMethodSetting } from '../../types';
 import { uploadFileToStorage, useResolvedMediaUrl } from '../../services/storageService';
+import {
+  DEFAULT_PAYMENT_METHODS,
+  normalizePaymentSettingsList,
+  savePaymentSettingToFirestore
+} from '../../services/firestoreService';
 
 interface AdminPaymentsTabProps {
-  paymentMethods: PaymentMethodSetting[];
-  onSavePaymentMethod: (setting: PaymentMethodSetting) => Promise<void>;
-  onDeletePaymentMethod: (id: string) => Promise<void>;
-  onAddPaymentMethod: (setting: PaymentMethodSetting) => Promise<void>;
+  paymentSettings?: PaymentMethodSetting[];
+  paymentMethods?: PaymentMethodSetting[];
+  onSaveSetting?: (setting: PaymentMethodSetting) => Promise<void>;
+  onSavePaymentMethod?: (setting: PaymentMethodSetting) => Promise<void>;
+  onDeleteSetting?: (id: string) => Promise<void>;
+  onDeletePaymentMethod?: (id: string) => Promise<void>;
+  onAddPaymentMethod?: (setting: PaymentMethodSetting) => Promise<void>;
 }
 
 interface MethodMeta {
-  id: string;
+  id: 'esewa' | 'bank' | 'cod';
   code: 'esewa' | 'bank' | 'cod';
   title: string;
   description: string;
@@ -47,68 +55,103 @@ const METHOD_DEFINITIONS: MethodMeta[] = [
 ];
 
 function QrPreviewThumb({ src, alt }: { src?: string; alt: string }) {
-  const resolved = useResolvedMediaUrl(src || '');
-  if (!src || !resolved) {
+  const resolved = useResolvedMediaUrl(typeof src === 'string' ? src : '');
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setHasError(false);
+  }, [src, resolved]);
+
+  if (!src || !resolved || hasError) {
     return (
-      <div className="flex flex-col items-center justify-center text-[#B8B8BE]">
+      <div className="flex flex-col items-center justify-center text-[#B8B8BE] select-none">
         <ImageIcon className="w-6 h-6 stroke-[1.5]" />
         <span className="text-[10px] font-medium mt-1">No QR</span>
       </div>
     );
   }
+
   return (
     <img
       src={resolved}
       alt={alt}
       referrerPolicy="no-referrer"
+      onError={() => setHasError(true)}
       className="w-full h-full object-contain p-1.5 bg-white"
     />
   );
 }
 
 export default function AdminPaymentsTab({
+  paymentSettings,
   paymentMethods,
+  onSaveSetting,
   onSavePaymentMethod
 }: AdminPaymentsTabProps) {
+  const incomingList = paymentSettings || paymentMethods || DEFAULT_PAYMENT_METHODS;
+  const [localMethods, setLocalMethods] = useState<PaymentMethodSetting[]>(() =>
+    normalizePaymentSettingsList(incomingList)
+  );
   const [uploadingCode, setUploadingCode] = useState<string | null>(null);
 
-  // Merge live Firestore methods with the 3 canonical definitions in exact order
+  useEffect(() => {
+    const source = paymentSettings || paymentMethods;
+    if (Array.isArray(source) && source.length > 0) {
+      setLocalMethods(normalizePaymentSettingsList(source));
+    }
+  }, [paymentSettings, paymentMethods]);
+
+  const persistMethod = async (updated: PaymentMethodSetting) => {
+    const saveFn = onSaveSetting || onSavePaymentMethod || savePaymentSettingToFirestore;
+    try {
+      await saveFn(updated);
+    } catch (err) {
+      console.error('Failed to save payment setting:', err);
+    }
+  };
+
   const resolvedMethods: { meta: MethodMeta; record: PaymentMethodSetting }[] =
     METHOD_DEFINITIONS.map((meta) => {
-      const existing = paymentMethods.find(
-        (m) => m.id === meta.id || m.code.toLowerCase() === meta.code
-      );
-      const record: PaymentMethodSetting = existing
-        ? {
-            ...existing,
-            name: meta.title,
-            code: meta.code,
-            displayOrder: meta.displayOrder,
-            qrEnabled: existing.qrEnabled ?? Boolean(existing.qrImageUrl)
-          }
-        : {
-            id: meta.id,
-            code: meta.code,
-            name: meta.title,
-            enabled: true,
-            qrEnabled: false,
-            qrImageUrl: '',
-            instructions: meta.description,
-            displayOrder: meta.displayOrder,
-            requiresScreenshot: false
-          };
+      const existing =
+        localMethods.find(
+          (m) => m.id === meta.id || String(m.code || '').toLowerCase() === meta.code
+        ) ||
+        DEFAULT_PAYMENT_METHODS.find((m) => m.id === meta.id)!;
+
+      const record: PaymentMethodSetting = {
+        ...existing,
+        id: meta.id,
+        code: meta.code,
+        name: meta.title,
+        displayOrder: meta.displayOrder,
+        enabled: typeof existing.enabled === 'boolean' ? existing.enabled : true,
+        qrImageUrl: typeof existing.qrImageUrl === 'string' ? existing.qrImageUrl : '',
+        qrEnabled:
+          typeof existing.qrEnabled === 'boolean'
+            ? existing.qrEnabled
+            : Boolean(existing.qrImageUrl),
+        requiresScreenshot: Boolean(existing.requiresScreenshot)
+      };
+
       return { meta, record };
     });
 
   const activeCount = resolvedMethods.filter((m) => m.record.enabled).length;
   const screenshotUploadEnabled = resolvedMethods.some((m) => m.record.requiresScreenshot);
 
+  const updateLocalAndSave = async (updated: PaymentMethodSetting) => {
+    setLocalMethods((prev) =>
+      prev.map((m) => (m.id === updated.id || m.code === updated.code ? updated : m))
+    );
+    await persistMethod(updated);
+  };
+
   const handleToggleActive = async (record: PaymentMethodSetting) => {
     const updated: PaymentMethodSetting = {
       ...record,
       enabled: !record.enabled
     };
-    await onSavePaymentMethod(updated);
+    await updateLocalAndSave(updated);
   };
 
   const handleToggleQr = async (record: PaymentMethodSetting) => {
@@ -116,7 +159,7 @@ export default function AdminPaymentsTab({
       ...record,
       qrEnabled: !record.qrEnabled
     };
-    await onSavePaymentMethod(updated);
+    await updateLocalAndSave(updated);
   };
 
   const handleUploadQrFile = async (
@@ -130,11 +173,12 @@ export default function AdminPaymentsTab({
     try {
       const res = await uploadFileToStorage(file, `payment-qrs/${record.code}`);
       if (res.url) {
-        await onSavePaymentMethod({
+        const updated: PaymentMethodSetting = {
           ...record,
           qrImageUrl: res.url,
           qrEnabled: true
-        });
+        };
+        await updateLocalAndSave(updated);
       }
     } catch (err) {
       console.error('Failed to upload QR image:', err);
@@ -146,11 +190,13 @@ export default function AdminPaymentsTab({
 
   const handleToggleScreenshotUpload = async () => {
     const nextValue = !screenshotUploadEnabled;
-    for (const { record } of resolvedMethods) {
-      await onSavePaymentMethod({
-        ...record,
-        requiresScreenshot: nextValue
-      });
+    const updatedAll = resolvedMethods.map(({ record }) => ({
+      ...record,
+      requiresScreenshot: nextValue
+    }));
+    setLocalMethods(updatedAll);
+    for (const item of updatedAll) {
+      await persistMethod(item);
     }
   };
 
@@ -236,12 +282,12 @@ export default function AdminPaymentsTab({
                   <button
                     type="button"
                     onClick={() => handleToggleQr(record)}
-                    className={`w-10 h-5.5 rounded-full p-0.5 transition-colors flex items-center cursor-pointer ${
+                    className={`w-10 h-[22px] rounded-full p-0.5 transition-colors flex items-center cursor-pointer ${
                       isQrOn ? 'bg-[#18181B] justify-end' : 'bg-[#D4D4D8] justify-start'
                     }`}
                     aria-label={`Toggle ${meta.title} QR`}
                   >
-                    <span className="w-4.5 h-4.5 rounded-full bg-white shadow-xs block" />
+                    <span className="w-[18px] h-[18px] rounded-full bg-white shadow-xs block" />
                   </button>
                 </div>
               </div>
@@ -296,14 +342,14 @@ export default function AdminPaymentsTab({
           <button
             type="button"
             onClick={handleToggleScreenshotUpload}
-            className={`w-10 h-5.5 rounded-full p-0.5 transition-colors flex items-center cursor-pointer ${
+            className={`w-10 h-[22px] rounded-full p-0.5 transition-colors flex items-center cursor-pointer ${
               screenshotUploadEnabled
                 ? 'bg-[#18181B] justify-end'
                 : 'bg-[#D4D4D8] justify-start'
             }`}
             aria-label="Toggle Screenshot Upload"
           >
-            <span className="w-4.5 h-4.5 rounded-full bg-white shadow-xs block" />
+            <span className="w-[18px] h-[18px] rounded-full bg-white shadow-xs block" />
           </button>
         </div>
       </div>

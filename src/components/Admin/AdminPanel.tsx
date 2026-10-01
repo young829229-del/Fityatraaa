@@ -22,6 +22,7 @@ import AdminPaymentsTab from './AdminPaymentsTab';
 import AdminBannersTab from './AdminBannersTab';
 import AdminActivityTab from './AdminActivityTab';
 import {
+  DEFAULT_PAYMENT_METHODS,
   subscribeToOrders,
   subscribeToProducts,
   subscribeToReviews,
@@ -64,7 +65,9 @@ export default function AdminPanel({ onBackToStore, onOpenPageBuilder }: AdminPa
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [reviews, setReviews] = useState<ReviewRecord[]>([]);
-  const [paymentSettings, setPaymentSettings] = useState<PaymentMethodSetting[]>([]);
+  const [paymentSettings, setPaymentSettings] = useState<PaymentMethodSetting[]>(
+    DEFAULT_PAYMENT_METHODS
+  );
   const [banners, setBanners] = useState<StoreBanner[]>([]);
   const [contactSubmissions, setContactSubmissions] = useState<ContactSubmission[]>([]);
   const [emailSubscribers, setEmailSubscribers] = useState<EmailSubscriber[]>([]);
@@ -240,7 +243,14 @@ export default function AdminPanel({ onBackToStore, onOpenPageBuilder }: AdminPa
           {currentTab === 'payments' && (
             <AdminPaymentsTab
               paymentSettings={paymentSettings}
-              onSaveSetting={savePaymentSettingToFirestore}
+              onSaveSetting={async (updated) => {
+                setPaymentSettings((prev) =>
+                  prev.map((m) =>
+                    m.id === updated.id || m.code === updated.code ? updated : m
+                  )
+                );
+                await savePaymentSettingToFirestore(updated);
+              }}
               onDeleteSetting={deletePaymentSettingFromFirestore}
             />
           )}

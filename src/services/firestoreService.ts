@@ -648,7 +648,103 @@ export async function deleteReviewFromFirestore(reviewId: string): Promise<void>
 // 4. PAYMENT SETTINGS & QR MANAGEMENT
 // -------------------------------------------------------------
 
-export function subscribeToPaymentSettings(callback: (methods: PaymentMethodSetting[]) => void): () => void {
+export const DEFAULT_PAYMENT_METHODS: PaymentMethodSetting[] = [
+  {
+    id: 'esewa',
+    code: 'esewa',
+    name: 'eSewa',
+    enabled: true,
+    qrEnabled: false,
+    accountName: 'FitYatra Nutrition Nepal',
+    accountNumber: '9705283444',
+    qrImageUrl: '',
+    instructions: 'Digital wallet payment via eSewa ID or QR.',
+    displayOrder: 1,
+    requiresScreenshot: false
+  },
+  {
+    id: 'bank',
+    code: 'bank',
+    name: 'Bank Transfer',
+    enabled: true,
+    qrEnabled: false,
+    accountName: 'FitYatra Supplement Pvt. Ltd.',
+    accountNumber: '0120100012345601 (Nabil Bank)',
+    qrImageUrl: '',
+    instructions: 'Direct bank deposit / Fonepay account transfer.',
+    displayOrder: 2,
+    requiresScreenshot: false
+  },
+  {
+    id: 'cod',
+    code: 'cod',
+    name: 'Cash on Delivery (COD)',
+    enabled: true,
+    qrEnabled: false,
+    accountName: 'Pay upon delivery',
+    accountNumber: 'Cash on Delivery',
+    qrImageUrl: '',
+    instructions: 'Pay with physical cash upon package doorstep delivery.',
+    displayOrder: 3,
+    requiresScreenshot: false
+  }
+];
+
+export function normalizePaymentSettingsList(
+  rawList: Partial<PaymentMethodSetting>[]
+): PaymentMethodSetting[] {
+  return DEFAULT_PAYMENT_METHODS.map((canonical) => {
+    // Prefer exact canonical ID match first, then code match
+    const exactMatch = rawList.find((m) => m && m.id === canonical.id);
+    const codeMatch = rawList.find(
+      (m) => m && String(m.code || '').toLowerCase() === canonical.code
+    );
+    const existing = exactMatch || codeMatch;
+
+    if (!existing) {
+      return { ...canonical };
+    }
+
+    const qrImageUrl =
+      typeof existing.qrImageUrl === 'string' ? existing.qrImageUrl.trim() : '';
+    const qrEnabled =
+      typeof existing.qrEnabled === 'boolean' ? existing.qrEnabled : Boolean(qrImageUrl);
+
+    return {
+      ...canonical,
+      ...existing,
+      id: canonical.id,
+      code: canonical.code,
+      name: canonical.name,
+      enabled: typeof existing.enabled === 'boolean' ? existing.enabled : canonical.enabled,
+      qrEnabled,
+      qrImageUrl,
+      accountName:
+        typeof existing.accountName === 'string' && existing.accountName.trim()
+          ? existing.accountName
+          : canonical.accountName,
+      accountNumber:
+        typeof existing.accountNumber === 'string' && existing.accountNumber.trim()
+          ? existing.accountNumber
+          : canonical.accountNumber,
+      instructions:
+        typeof existing.instructions === 'string' && existing.instructions.trim()
+          ? existing.instructions
+          : canonical.instructions,
+      displayOrder: canonical.displayOrder,
+      requiresScreenshot:
+        typeof existing.requiresScreenshot === 'boolean'
+          ? existing.requiresScreenshot
+          : canonical.requiresScreenshot
+    };
+  });
+}
+
+let hasVerifiedCanonicalPaymentDocs = false;
+
+export function subscribeToPaymentSettings(
+  callback: (methods: PaymentMethodSetting[]) => void
+): () => void {
   try {
     const q = query(collection(db, PAYMENT_SETTINGS_COLLECTION));
     return onSnapshot(
@@ -657,70 +753,51 @@ export function subscribeToPaymentSettings(callback: (methods: PaymentMethodSett
         if (snapshot.empty) {
           seedBaselinePaymentSettings().then(callback);
         } else {
-          const list = snapshot.docs.map((d) => ({
-            ...(d.data() as PaymentMethodSetting),
+          const rawDocs = snapshot.docs.map((d) => ({
+            ...(d.data() as Partial<PaymentMethodSetting>),
             id: d.id
           }));
-          list.sort((a, b) => a.displayOrder - b.displayOrder);
-          callback(list);
+          const normalized = normalizePaymentSettingsList(rawDocs);
+          callback(normalized);
+
+          // Ensure all 3 canonical documents exist in Firestore with complete fields
+          if (!hasVerifiedCanonicalPaymentDocs) {
+            hasVerifiedCanonicalPaymentDocs = true;
+            for (const method of normalized) {
+              const hasExactDoc = snapshot.docs.some((d) => d.id === method.id);
+              if (!hasExactDoc) {
+                setDoc(
+                  doc(db, PAYMENT_SETTINGS_COLLECTION, method.id),
+                  stripUndefinedDeep(method),
+                  { merge: true }
+                ).catch((e) => console.warn('Auto-sync canonical payment method notice:', e));
+              }
+            }
+          }
         }
       },
       (error) => {
         console.warn('Real-time payment settings notice:', error);
+        callback(DEFAULT_PAYMENT_METHODS);
       }
     );
   } catch (err) {
     console.warn('subscribeToPaymentSettings caught error:', err);
+    callback(DEFAULT_PAYMENT_METHODS);
     return () => {};
   }
 }
 
 export async function seedBaselinePaymentSettings(): Promise<PaymentMethodSetting[]> {
-  const defaults: PaymentMethodSetting[] = [
-    {
-      id: 'esewa',
-      code: 'esewa',
-      name: 'eSewa',
-      enabled: true,
-      qrEnabled: false,
-      accountName: 'FitYatra Nutrition Nepal',
-      accountNumber: '9705283444',
-      qrImageUrl: '',
-      instructions: 'Digital wallet payment via eSewa ID or QR.',
-      displayOrder: 1,
-      requiresScreenshot: false
-    },
-    {
-      id: 'bank',
-      code: 'bank',
-      name: 'Bank Transfer',
-      enabled: true,
-      qrEnabled: false,
-      accountName: 'FitYatra Supplement Pvt. Ltd.',
-      accountNumber: '0120100012345601 (Nabil Bank)',
-      qrImageUrl: '',
-      instructions: 'Direct bank deposit / Fonepay account transfer.',
-      displayOrder: 2,
-      requiresScreenshot: false
-    },
-    {
-      id: 'cod',
-      code: 'cod',
-      name: 'Cash on Delivery (COD)',
-      enabled: true,
-      qrEnabled: false,
-      accountName: 'Pay upon delivery',
-      accountNumber: 'Cash on Delivery',
-      qrImageUrl: '',
-      instructions: 'Pay with physical cash upon package doorstep delivery.',
-      displayOrder: 3,
-      requiresScreenshot: false
-    }
-  ];
+  const defaults = DEFAULT_PAYMENT_METHODS.map((m) => ({ ...m }));
 
   try {
     for (const item of defaults) {
-      await setDoc(doc(db, PAYMENT_SETTINGS_COLLECTION, item.id), item, { merge: true });
+      await setDoc(
+        doc(db, PAYMENT_SETTINGS_COLLECTION, item.id),
+        stripUndefinedDeep(item),
+        { merge: true }
+      );
     }
     return defaults;
   } catch (e) {
@@ -729,16 +806,32 @@ export async function seedBaselinePaymentSettings(): Promise<PaymentMethodSettin
   }
 }
 
-export async function savePaymentSettingToFirestore(setting: PaymentMethodSetting): Promise<void> {
-  const docId = (setting.id || '').trim();
+export async function savePaymentSettingToFirestore(
+  setting: PaymentMethodSetting
+): Promise<void> {
+  const canonicalCode = String(setting.code || setting.id || '')
+    .trim()
+    .toLowerCase();
+  const canonical = DEFAULT_PAYMENT_METHODS.find(
+    (m) => m.id === setting.id || m.code === canonicalCode
+  );
+  const docId = canonical ? canonical.id : (setting.id || '').trim() || `pm_${Date.now()}`;
   const path = `${PAYMENT_SETTINGS_COLLECTION}/${docId}`;
   try {
     const payload = stripUndefinedDeep({
+      ...(canonical || {}),
       ...setting,
-      id: docId
+      id: docId,
+      code: canonical ? canonical.code : setting.code || docId,
+      name: canonical ? canonical.name : setting.name || docId,
+      enabled: typeof setting.enabled === 'boolean' ? setting.enabled : true,
+      qrEnabled: Boolean(setting.qrEnabled),
+      qrImageUrl: typeof setting.qrImageUrl === 'string' ? setting.qrImageUrl : '',
+      requiresScreenshot: Boolean(setting.requiresScreenshot),
+      displayOrder: canonical ? canonical.displayOrder : setting.displayOrder || 1
     });
     await setDoc(doc(db, PAYMENT_SETTINGS_COLLECTION, docId), payload, { merge: true });
-    await logAdminActivity('Payment Method Updated', `Updated payment method ${setting.name}`);
+    await logAdminActivity('Payment Method Updated', `Updated payment method ${payload.name}`);
   } catch (error) {
     console.error('savePaymentSettingToFirestore failed:', error);
     handleFirestoreError(error, OperationType.WRITE, path);
