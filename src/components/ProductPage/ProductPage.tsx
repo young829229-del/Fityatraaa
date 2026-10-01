@@ -117,11 +117,14 @@ export default function ProductPage({
   // Selected bundle (optional; null when user sets custom quantity via +/- stepper)
   const [selectedBundle, setSelectedBundle] = useState<BundleDeal | null>(null);
 
-  // Reset options and quantity when switching between products
+  // Reset options, quantity, and scroll position to top when opening or switching between products
   useEffect(() => {
     setSelectedOptionValues(defaultOptionValues);
     setQuantity(1);
     setSelectedBundle(null);
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
   }, [product.id, defaultOptionValues]);
 
   // Out-of-stock check
@@ -529,7 +532,7 @@ export default function ProductPage({
   };
 
   return (
-    <div className="min-h-screen bg-white text-neutral-900 font-sans selection:bg-black selection:text-white flex flex-col pb-20 md:pb-0">
+    <div className="min-h-screen bg-white text-neutral-900 font-sans selection:bg-black selection:text-white flex flex-col pb-20 md:pb-0 [overflow-anchor:none]">
       {/* Top Announcement Bar */}
       <AnnouncementBar />
 

@@ -152,6 +152,21 @@ export default function App() {
     ? products.find((p) => p.id === activeProductId) || null
     : null;
 
+  const handleOpenProduct = (prod: Product) => {
+    setActiveProductId(prod.id);
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  };
+
+  useEffect(() => {
+    if (activeProductId) {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    }
+  }, [activeProductId]);
+
   const activeHeroBanner = banners.find(
     (b) => b.enabled && b.displayLocation === 'hero' && (b.imageUrl || b.videoUrl)
   );
@@ -284,7 +299,7 @@ export default function App() {
             }}
             onClose={() => setBuilderProduct(null)}
             onTogglePreview={() => {
-              setActiveProductId(builderProduct.id);
+              handleOpenProduct(builderProduct);
               setBuilderProduct(null);
               navigateToStore();
             }}
@@ -308,7 +323,7 @@ export default function App() {
           onOpenSearch={() => setIsSearchOpen(true)}
           onBackToStore={() => setActiveProductId(null)}
           onAddToCart={handleAddToCart}
-          onSelectRelatedProduct={(p) => setActiveProductId(p.id)}
+          onSelectRelatedProduct={(p) => handleOpenProduct(p)}
           allProducts={products.filter((p) => p.isActive !== false)}
           liveReviews={reviews}
           liveBanners={banners}
@@ -349,7 +364,7 @@ export default function App() {
           onClose={() => setIsSearchOpen(false)}
           products={products.filter((p) => p.isActive !== false)}
           onSelectProduct={(p) => {
-            setActiveProductId(p.id);
+            handleOpenProduct(p);
             setIsSearchOpen(false);
           }}
         />
@@ -389,7 +404,7 @@ export default function App() {
           {/* 4. "Our Most Loved Products" 2-Col Mobile / Responsive Grid */}
           <ProductGrid
             products={products}
-            onSelectProduct={(p) => setActiveProductId(p.id)}
+            onSelectProduct={(p) => handleOpenProduct(p)}
             onAddToCartDirect={(p) => handleAddToCart(p, 1)}
           />
 
@@ -458,7 +473,7 @@ export default function App() {
         onClose={() => setIsSearchOpen(false)}
         products={products.filter((p) => p.isActive !== false)}
         onSelectProduct={(p) => {
-          setActiveProductId(p.id);
+          handleOpenProduct(p);
           setIsSearchOpen(false);
         }}
       />

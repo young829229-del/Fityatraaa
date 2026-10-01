@@ -119,13 +119,31 @@ export const PRODUCTS: Product[] = [
     rating: 5,
     reviewCount: 39,
     isSoldOut: false,
-    image: '/src/assets/images/wellcore_creatine_1790339507337.jpg',
+    image: 'firestore-media://media_1790768194142_wk7gp6',
     gallery: [
-      '/src/assets/images/wellcore_creatine_1790339507337.jpg',
-      '/src/assets/images/mb_creamp_1790339580436.jpg',
-      'https://i.ibb.co/rRCNBQMZ/gpt-image-2-Create-a-comparison-chart-image-titled-WHY-FITYATRA-Style-Clean-minimalist-prof-0-1-1.jpg',
-      'https://i.ibb.co/KcBDpGYD/MV2-1-1-1.jpg',
-      'https://i.ibb.co/dJBH98db/MV2-1-1-1-1.jpg'
+      'firestore-media://media_1790768194142_wk7gp6',
+      'firestore-media://media_1790768220881_qchstm',
+      'firestore-media://media_1790768223996_ahk7td',
+      'firestore-media://media_1790768227266_p89v1j',
+      'firestore-media://media_1790768230514_aqyvnx',
+      'firestore-media://media_1790768233542_wgzipz',
+      'firestore-media://media_1790768236747_nf2vfy',
+      'firestore-media://media_1790768243056_l51zcu',
+      'firestore-media://media_1790768246125_mxxmmt',
+      'firestore-media://media_1790768249382_cx1axz',
+      'firestore-media://media_1790768252488_ja14m4',
+      'firestore-media://media_1790768255824_q11eyv'
+    ],
+    detailBanners: [
+      'firestore-media://media_1790768238941_lx1bat',
+      'firestore-media://media_1790768242087_tdfwxf',
+      'firestore-media://media_1790768245271_wptdzf',
+      'firestore-media://media_1790768248556_sw0xog',
+      'firestore-media://media_1790768251817_gu5bvc',
+      'firestore-media://media_1790768255565_o4dcgb',
+      'firestore-media://media_1790768259009_nwkded',
+      'firestore-media://media_1790768262100_pcu3bd',
+      'firestore-media://media_1790768265445_hmzqic'
     ],
     videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-athlete-lifting-weights-in-a-gym-42416-large.mp4',
     description:
@@ -211,7 +229,7 @@ export const PRODUCTS: Product[] = [
     customerGallery: [
       {
         id: 'ugc-1',
-        url: '/src/assets/images/fuel_one_whey_1790339569614.jpg',
+        url: 'firestore-media://media_1790735546977_z6fieq',
         customerName: 'Rupesh T.',
         caption: 'Unboxing my Wellcore Creatine in Kathmandu. Fresh batch!',
         isFeatured: true,
@@ -227,7 +245,7 @@ export const PRODUCTS: Product[] = [
       },
       {
         id: 'ugc-3',
-        url: '/src/assets/images/wellcore_creatine_1790339507337.jpg',
+        url: 'firestore-media://media_1790768194142_wk7gp6',
         customerName: 'Aayush A.',
         caption: 'Best mixability. Mixes 100% clean with cold water.',
         isFeatured: true,
@@ -235,7 +253,7 @@ export const PRODUCTS: Product[] = [
       },
       {
         id: 'ugc-4',
-        url: '/src/assets/images/mb_creamp_1790339580436.jpg',
+        url: 'firestore-media://media_1790769152839_cm0u7l',
         customerName: 'Suman Shrestha',
         caption: 'Stacking with whey protein. Leg recovery is night and day.',
         isFeatured: false,
@@ -325,10 +343,16 @@ export const PRODUCTS: Product[] = [
     rating: 5,
     reviewCount: 5,
     isSoldOut: false,
-    image: '/src/assets/images/mb_fish_oil_1790339527059.jpg',
+    image: 'firestore-media://media_1790768609368_ntr3qe',
     gallery: [
-      '/src/assets/images/mb_fish_oil_1790339527059.jpg',
-      '/src/assets/images/mb_fish_oil_gold_1790339553609.jpg'
+      'firestore-media://media_1790768609368_ntr3qe',
+      'firestore-media://media_1790768619735_8dh359',
+      'firestore-media://media_1790768622869_9hkjj0'
+    ],
+    detailBanners: [
+      'firestore-media://media_1790768659880_5nt2qt',
+      'firestore-media://media_1790768663145_38rmdh',
+      'firestore-media://media_1790768666298_amcen5'
     ],
     description:
       'Essential fatty acids EPA & DHA for heart and joint health. Anti-reflux molecularly distilled softgels.',
@@ -386,7 +410,7 @@ export const PRODUCTS: Product[] = [
     faqs: DEFAULT_PRODUCT_FAQS,
     leanPhysiqueSection: {
       ...DEFAULT_LEAN_PHYSIQUE,
-      image: '/src/assets/images/mb_fish_oil_1790339527059.jpg'
+      image: 'firestore-media://media_1790768609368_ntr3qe'
     },
     deliveryInfo: DEFAULT_DELIVERY_INFO,
     pageSections: DEFAULT_PAGE_SECTIONS
@@ -405,8 +429,26 @@ export const PRODUCTS: Product[] = [
     rating: 5,
     reviewCount: 6,
     isSoldOut: false,
-    image: '/src/assets/images/mb_fish_oil_gold_1790339553609.jpg',
-    gallery: ['/src/assets/images/mb_fish_oil_gold_1790339553609.jpg'],
+    image: 'firestore-media://media_1790768756892_5vemuz',
+    gallery: [
+      'firestore-media://media_1790768756892_5vemuz',
+      'firestore-media://media_1790768774573_euqbhg',
+      'firestore-media://media_1790768777684_4wlsn4',
+      'firestore-media://media_1790768780819_l457kl',
+      'firestore-media://media_1790768783979_x1r11e',
+      'firestore-media://media_1790768787255_t7ti04',
+      'firestore-media://media_1790768790637_1p1efi',
+      'firestore-media://media_1790768794106_6q51ju',
+      'firestore-media://media_1790768797337_ncrypm'
+    ],
+    detailBanners: [
+      'firestore-media://media_1790768800126_fel14b',
+      'firestore-media://media_1790768803203_yt2zg9',
+      'firestore-media://media_1790768806532_rxu75h',
+      'firestore-media://media_1790768809893_g7xoma',
+      'firestore-media://media_1790768813130_w7f1j0',
+      'firestore-media://media_1790768816431_o1yml2'
+    ],
     description:
       'Triple strength formulation providing 560mg EPA and 400mg DHA per enteric-coated softgel with zero fishy burps.',
     servings: '60 Softgels',
@@ -462,7 +504,7 @@ export const PRODUCTS: Product[] = [
     faqs: DEFAULT_PRODUCT_FAQS,
     leanPhysiqueSection: {
       ...DEFAULT_LEAN_PHYSIQUE,
-      image: '/src/assets/images/mb_fish_oil_gold_1790339553609.jpg'
+      image: 'firestore-media://media_1790768756892_5vemuz'
     },
     deliveryInfo: DEFAULT_DELIVERY_INFO,
     pageSections: DEFAULT_PAGE_SECTIONS
@@ -482,8 +524,20 @@ export const PRODUCTS: Product[] = [
     rating: 5,
     reviewCount: 8,
     isSoldOut: false,
-    image: '/src/assets/images/mb_carnitine_liquid_1790339566025.jpg',
-    gallery: ['/src/assets/images/mb_carnitine_liquid_1790339566025.jpg'],
+    image: 'firestore-media://media_1790769329131_be2lk2',
+    gallery: [
+      'firestore-media://media_1790769329131_be2lk2',
+      'firestore-media://media_1790769340436_czdk03',
+      'firestore-media://media_1790769343628_49u03y',
+      'firestore-media://media_1790769347031_ar5znv',
+      'firestore-media://media_1790769350141_nmmojb',
+      'firestore-media://media_1790769353478_zv5khf',
+      'firestore-media://media_1790769356670_d6fpsq'
+    ],
+    detailBanners: [
+      'firestore-media://media_1790769358399_k5ffub',
+      'firestore-media://media_1790769361410_gdtuak'
+    ],
     description:
       'Liquid fast-acting 3000mg L-Carnitine per serving to transport long-chain fatty acids into mitochondria for energy.',
     servings: '30 Servings',
@@ -526,7 +580,7 @@ export const PRODUCTS: Product[] = [
     faqs: DEFAULT_PRODUCT_FAQS,
     leanPhysiqueSection: {
       ...DEFAULT_LEAN_PHYSIQUE,
-      image: '/src/assets/images/mb_carnitine_liquid_1790339566025.jpg'
+      image: 'firestore-media://media_1790769329131_be2lk2'
     },
     deliveryInfo: DEFAULT_DELIVERY_INFO,
     pageSections: DEFAULT_PAGE_SECTIONS
@@ -543,8 +597,20 @@ export const PRODUCTS: Product[] = [
     stock: 42,
     badgeType: 'sale',
     isSoldOut: false,
-    image: '/src/assets/images/mb_vite_multivitamin_1790339611260.jpg',
-    gallery: ['/src/assets/images/mb_vite_multivitamin_1790339611260.jpg'],
+    image: 'firestore-media://media_1790769456413_no7ua3',
+    gallery: [
+      'firestore-media://media_1790769456413_no7ua3',
+      'firestore-media://media_1790769463571_aokyrg',
+      'firestore-media://media_1790769466739_epzstl',
+      'firestore-media://media_1790769469999_g4qh8t',
+      'firestore-media://media_1790769473130_lqp0d2',
+      'firestore-media://media_1790769476206_f4rjxu'
+    ],
+    detailBanners: [
+      'firestore-media://media_1790769474467_0zkwh4',
+      'firestore-media://media_1790769477470_n6b66j',
+      'firestore-media://media_1790769480637_w42v3l'
+    ],
     description:
       'Daily micronutrient blend with essential vitamins, minerals, prebiotic fibers, and botanical digestive enzymes.',
     servings: '60 Tablets',
@@ -567,8 +633,23 @@ export const PRODUCTS: Product[] = [
     stock: 50,
     badgeType: 'sale',
     isSoldOut: false,
-    image: '/src/assets/images/myfitness_peanut_butter_1790339626354.jpg',
-    gallery: ['/src/assets/images/myfitness_peanut_butter_1790339626354.jpg'],
+    image: 'firestore-media://media_1790768450013_bib084',
+    gallery: [
+      'firestore-media://media_1790768450013_bib084',
+      'firestore-media://media_1790768463396_n2k3nx',
+      'firestore-media://media_1790768467007_en3u3x',
+      'firestore-media://media_1790768470269_w9zfrx',
+      'firestore-media://media_1790768473738_letmt0',
+      'firestore-media://media_1790768477297_0bg0yt',
+      'firestore-media://media_1790768480768_peu3v9',
+      'firestore-media://media_1790768484910_v2jtif',
+      'firestore-media://media_1790768489144_cg2t64'
+    ],
+    detailBanners: [
+      'firestore-media://media_1790768561963_1qefjh',
+      'firestore-media://media_1790768565122_1h4gsp',
+      'firestore-media://media_1790768568421_iuzh46'
+    ],
     description:
       'Fresh roasted crunchy brown peanuts packed with healthy monounsaturated fats and 25g natural protein per 100g.',
     servings: '1kg Tub',
@@ -591,8 +672,14 @@ export const PRODUCTS: Product[] = [
     stock: 25,
     badgeType: 'sale',
     isSoldOut: false,
-    image: '/src/assets/images/fuel_one_whey_1790339569614.jpg',
-    gallery: ['/src/assets/images/fuel_one_whey_1790339569614.jpg'],
+    image: 'firestore-media://media_1790735546977_z6fieq',
+    gallery: [
+      'firestore-media://media_1790735546977_z6fieq',
+      'firestore-media://media_1790735568716_erd7tt',
+      'firestore-media://media_1790735572930_3evdyl',
+      'firestore-media://media_1790735577094_exrf32',
+      'firestore-media://media_1790735581195_u5n1wh'
+    ],
     description:
       'High biological value whey formula with 24g pure protein and 5.2g BCAAs per scoop. Laboratory tested for 100% label authenticity.',
     servings: '30 Servings (1kg)',
@@ -625,8 +712,23 @@ export const PRODUCTS: Product[] = [
     stock: 30,
     badgeType: 'sale',
     isSoldOut: false,
-    image: '/src/assets/images/mb_creamp_1790339580436.jpg',
-    gallery: ['/src/assets/images/mb_creamp_1790339580436.jpg'],
+    image: 'firestore-media://media_1790769152839_cm0u7l',
+    gallery: [
+      'firestore-media://media_1790769152839_cm0u7l',
+      'firestore-media://media_1790769162021_qpsvbx',
+      'firestore-media://media_1790769165009_w2vnvi',
+      'firestore-media://media_1790769168052_c6g9wh',
+      'firestore-media://media_1790769171078_ah2xia',
+      'firestore-media://media_1790769174128_jxl90h',
+      'firestore-media://media_1790769177239_23g9ic',
+      'firestore-media://media_1790769180332_gcobrp'
+    ],
+    detailBanners: [
+      'firestore-media://media_1790769191824_hx4fed',
+      'firestore-media://media_1790769194837_e9c2jt',
+      'firestore-media://media_1790769197918_tlehtk',
+      'firestore-media://media_1790769200946_fnfebk'
+    ],
     description:
       'Formulated with certified Creapure, the gold standard in ultra-pure micronized creatine monohydrate. Rapid ATP replenishing formulation.',
     servings: '83 Servings',
@@ -662,12 +764,23 @@ export function enrichProductWithDefaults(product: Product): Product {
         textColor: '#FFFFFF'
       };
 
+  const cleanImage =
+    product.image && !product.image.startsWith('/src/assets/')
+      ? product.image
+      : baseline?.image || '';
+
+  const filteredGallery = (product.gallery || []).filter(
+    (img): img is string => Boolean(img && !img.startsWith('/src/assets/'))
+  );
+
   const activeGallery =
-    product.gallery && product.gallery.length > 0
-      ? product.gallery
-      : product.image
-      ? [product.image]
-      : baseline?.gallery || [];
+    filteredGallery.length > 0
+      ? filteredGallery
+      : baseline?.gallery && baseline.gallery.length > 0
+      ? baseline.gallery
+      : cleanImage
+      ? [cleanImage]
+      : [];
 
   const customScoopImages = (product.scoopSection?.images || []).filter(
     (img): img is string => Boolean(img && !img.startsWith('/src/assets/'))
@@ -690,9 +803,7 @@ export function enrichProductWithDefaults(product: Product): Product {
         ? customScoopImages
         : activeGallery.length > 0
         ? activeGallery.slice(0, 3)
-        : [product.image].filter(
-            (img): img is string => Boolean(img && !img.startsWith('/src/assets/'))
-          )
+        : [cleanImage].filter(Boolean)
   };
 
   const faqs: ProductFaqItem[] =
@@ -710,7 +821,7 @@ export function enrichProductWithDefaults(product: Product): Product {
     ...DEFAULT_LEAN_PHYSIQUE,
     ...(baseline?.leanPhysiqueSection || {}),
     ...(product.leanPhysiqueSection || {}),
-    image: customLeanImage || product.image || DEFAULT_LEAN_PHYSIQUE.image
+    image: customLeanImage || cleanImage || DEFAULT_LEAN_PHYSIQUE.image
   };
 
   const deliveryInfo: DeliveryInfoConfig = product.deliveryInfo
@@ -782,6 +893,8 @@ export function enrichProductWithDefaults(product: Product): Product {
   const enriched: Product = {
     ...(baseline || {}),
     ...product,
+    image: cleanImage,
+    gallery: activeGallery,
     price: Number(product.price) || 0,
     originalPrice: Number(product.originalPrice ?? product.price) || 0,
     pageSections,
