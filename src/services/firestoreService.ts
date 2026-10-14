@@ -21,7 +21,8 @@ import {
   StoreSettings,
   AdminActivity,
   ContactSubmission,
-  EmailSubscriber
+  EmailSubscriber,
+  BundleConfig
 } from '../types';
 import { PRODUCTS as INITIAL_PRODUCTS, enrichProductWithDefaults } from '../data/products';
 
@@ -34,6 +35,7 @@ const STORE_SETTINGS_COLLECTION = 'store_settings';
 const ADMIN_ACTIVITY_COLLECTION = 'admin_activity';
 const CONTACT_SUBMISSIONS_COLLECTION = 'contact_submissions';
 const EMAIL_SUBSCRIBERS_COLLECTION = 'email_subscribers';
+const BUNDLES_COLLECTION = 'bundles';
 
 let hasSeededProducts = false;
 let hasSeededReviews = false;
@@ -1334,3 +1336,89 @@ export async function deleteEmailSubscriberFromFirestore(id: string): Promise<vo
     handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
+
+// -------------------------------------------------------------
+// 10. COMBOS & BUNDLES MANAGEMENT
+// -------------------------------------------------------------
+
+export function subscribeToBundles(
+  callback: (bundles: BundleConfig[]) => void
+): () => void {
+  try {
+    const q = query(collection(db, BUNDLES_COLLECTION));
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const list = snapshot.docs.map((d) => ({
+          ...(d.data() as BundleConfig),
+          id: d.id
+        }));
+        list.sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+        callback(list);
+      },
+      (error) => {
+        console.warn('Real-time bundles notice:', error);
+      }
+    );
+  } catch (err) {
+    console.warn('subscribeToBundles caught error:', err);
+    return () => {};
+  }
+}
+
+export async function saveBundleToFirestore(
+  bundleData: Partial<BundleConfig> & { title: string }
+): Promise<BundleConfig> {
+  const id = bundleData.id || `bundle_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const path = `${BUNDLES_COLLECTION}/${id}`;
+
+  const fullBundle: BundleConfig = {
+    id,
+    title: bundleData.title,
+    adminLabel: bundleData.adminLabel || bundleData.title,
+    description: bundleData.description || '',
+    bundleType: bundleData.bundleType || 'buy_more_save_more',
+    badgeText: bundleData.badgeText || '',
+    isPopular: bundleData.isPopular || false,
+    enabled: bundleData.enabled ?? true,
+    sellingPrice: Number(bundleData.sellingPrice) || 0,
+    originalPrice: Number(bundleData.originalPrice) || 0,
+    savingsAmount: Number(bundleData.savingsAmount) || 0,
+    savingsPercentage: Number(bundleData.savingsPercentage) || 0,
+    image: bundleData.image || '',
+    items: bundleData.items || [],
+    tiers: bundleData.tiers || [],
+    targetProductIds: bundleData.targetProductIds || ['all'],
+    placement: bundleData.placement || 'main_selector',
+    displayOrder: typeof bundleData.displayOrder === 'number' ? bundleData.displayOrder : 0,
+    frequentlyBoughtDiscountPercentage: bundleData.frequentlyBoughtDiscountPercentage,
+    createdAt: bundleData.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  const payload = stripUndefinedDeep(fullBundle);
+
+  try {
+    await setDoc(doc(db, BUNDLES_COLLECTION, id), payload);
+    await logAdminActivity(
+      'Bundle Saved',
+      `Saved combo/bundle "${fullBundle.title}" (${fullBundle.bundleType})`
+    );
+    return fullBundle;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+    throw error;
+  }
+}
+
+export async function deleteBundleFromFirestore(id: string): Promise<void> {
+  const path = `${BUNDLES_COLLECTION}/${id}`;
+  try {
+    await deleteDoc(doc(db, BUNDLES_COLLECTION, id));
+    await logAdminActivity('Bundle Deleted', `Deleted bundle ID ${id}`);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+    throw error;
+  }
+}
+

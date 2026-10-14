@@ -10,6 +10,7 @@ interface ProductOptionsProps {
   onQuantityChange: (newQuantity: number) => void;
   maxStock?: number;
   isSoldOut?: boolean;
+  showQuantitySelector?: boolean;
 }
 
 export default function ProductOptions({
@@ -20,7 +21,8 @@ export default function ProductOptions({
   quantity,
   onQuantityChange,
   maxStock = 50,
-  isSoldOut = false
+  isSoldOut = false,
+  showQuantitySelector = true
 }: ProductOptionsProps) {
   // Normalize options: ensure both Flavor and Variant selectors render cleanly when available
   const resolvedOptions: ProductOption[] =
@@ -82,37 +84,39 @@ export default function ProductOptions({
       })}
 
       {/* Quantity Selector: Minus button, Quantity number, Plus button */}
-      <div className="flex flex-col space-y-2">
-        <label className="text-xs sm:text-sm font-bold text-neutral-800">
-          Quantity
-        </label>
-        <div className="inline-flex items-center border border-neutral-300 bg-white w-fit">
-          <button
-            type="button"
-            onClick={handleDecrement}
-            disabled={isSoldOut || quantity <= 1}
-            aria-label="Decrease quantity"
-            className="w-11 h-11 flex items-center justify-center text-neutral-800 hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-          >
-            <Minus className="w-4 h-4" />
-          </button>
-          <span
-            className="w-12 text-center text-sm sm:text-base font-bold text-neutral-950 tabular-nums select-none"
-            aria-live="polite"
-          >
-            {quantity}
-          </span>
-          <button
-            type="button"
-            onClick={handleIncrement}
-            disabled={isSoldOut || (maxStock > 0 && quantity >= maxStock)}
-            aria-label="Increase quantity"
-            className="w-11 h-11 flex items-center justify-center text-neutral-800 hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
+      {showQuantitySelector && (
+        <div className="flex flex-col space-y-2">
+          <label className="text-xs sm:text-sm font-bold text-neutral-800">
+            Quantity
+          </label>
+          <div className="inline-flex items-center border border-neutral-300 bg-white w-fit">
+            <button
+              type="button"
+              onClick={handleDecrement}
+              disabled={isSoldOut || quantity <= 1}
+              aria-label="Decrease quantity"
+              className="w-11 h-11 flex items-center justify-center text-neutral-800 hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            >
+              <Minus className="w-4 h-4" />
+            </button>
+            <span
+              className="w-12 text-center text-sm sm:text-base font-bold text-neutral-950 tabular-nums select-none"
+              aria-live="polite"
+            >
+              {quantity}
+            </span>
+            <button
+              type="button"
+              onClick={handleIncrement}
+              disabled={isSoldOut || (maxStock > 0 && quantity >= maxStock)}
+              aria-label="Increase quantity"
+              className="w-11 h-11 flex items-center justify-center text-neutral-800 hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

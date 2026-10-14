@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import {
   ShoppingBag,
   Clock,
@@ -10,15 +11,20 @@ import {
   TrendingUp,
   Activity,
   Radio,
-  ShieldCheck
+  ShieldCheck,
+  Megaphone,
+  Check,
+  Loader2
 } from 'lucide-react';
-import { Order, Product, ReviewRecord, AdminActivity } from '../../types';
+import { Order, Product, ReviewRecord, AdminActivity, StoreSettings } from '../../types';
 
 interface AdminDashboardTabProps {
   orders: Order[];
   products: Product[];
   reviews: ReviewRecord[];
   activities: AdminActivity[];
+  storeSettings?: StoreSettings | null;
+  onUpdateStoreSettings?: (updates: Partial<StoreSettings>) => Promise<void>;
   onViewOrder: (order: Order) => void;
   onNavigateToTab: (tab: any) => void;
 }
@@ -28,9 +34,36 @@ export default function AdminDashboardTab({
   products = [],
   reviews = [],
   activities = [],
+  storeSettings,
+  onUpdateStoreSettings,
   onViewOrder,
   onNavigateToTab
 }: AdminDashboardTabProps) {
+  const [announcementInput, setAnnouncementInput] = useState<string>(
+    storeSettings?.announcementText || 'FLAT RS 200 DELIVERY ACROSS NEPAL • CASH ON DELIVERY & ESEWA AVAILABLE'
+  );
+  const [isSavingAnnouncement, setIsSavingAnnouncement] = useState(false);
+  const [isAnnouncementSaved, setIsAnnouncementSaved] = useState(false);
+
+  useEffect(() => {
+    if (storeSettings?.announcementText) {
+      setAnnouncementInput(storeSettings.announcementText);
+    }
+  }, [storeSettings?.announcementText]);
+
+  const handleSaveAnnouncement = async () => {
+    if (!onUpdateStoreSettings) return;
+    setIsSavingAnnouncement(true);
+    try {
+      await onUpdateStoreSettings({ announcementText: announcementInput.trim() });
+      setIsAnnouncementSaved(true);
+      setTimeout(() => setIsAnnouncementSaved(false), 2500);
+    } catch (err) {
+      console.error('Failed to save announcement bar:', err);
+    } finally {
+      setIsSavingAnnouncement(false);
+    }
+  };
   // Real live statistics derived from Firebase collections
   const totalRevenue = orders
     .filter((o) => o.status !== 'cancelled')
@@ -54,6 +87,57 @@ export default function AdminDashboardTab({
 
   return (
     <div className="space-y-6">
+      {/* Top Announcement Bar Setting */}
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-neutral-200/90 shadow-xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <Megaphone className="w-4 h-4 text-neutral-800" />
+              <h3 className="text-sm font-bold text-neutral-900 tracking-tight">
+                Top Announcement Bar
+              </h3>
+            </div>
+            <p className="text-xs text-neutral-500">
+              Edit the message displayed across the top announcement bar on all pages.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 flex-1 md:max-w-xl">
+            <input
+              type="text"
+              value={announcementInput}
+              onChange={(e) => setAnnouncementInput(e.target.value)}
+              placeholder="e.g. FLAT RS 200 DELIVERY ACROSS NEPAL • CASH ON DELIVERY & ESEWA AVAILABLE"
+              className="flex-1 bg-neutral-50 border border-neutral-300 focus:border-neutral-900 focus:bg-white rounded-xl px-3.5 py-2.5 text-xs font-semibold text-neutral-900 focus:outline-none transition-all"
+            />
+            <button
+              type="button"
+              onClick={handleSaveAnnouncement}
+              disabled={isSavingAnnouncement}
+              className={`shrink-0 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                isAnnouncementSaved
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-neutral-900 hover:bg-black text-white active:scale-95'
+              }`}
+            >
+              {isSavingAnnouncement ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Saving...</span>
+                </>
+              ) : isAnnouncementSaved ? (
+                <>
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Saved</span>
+                </>
+              ) : (
+                <span>Save</span>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Primary KPI Stat Cards (Row 1) */}
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* 1. Gross Revenue & Total Orders */}

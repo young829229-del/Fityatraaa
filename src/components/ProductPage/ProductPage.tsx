@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import {
   Product,
   BundleDeal,
+  BundleConfig,
   ProductSectionItem,
   ReviewRecord,
   StoreBanner,
@@ -13,9 +14,11 @@ import ProductStickyHeader from './ProductStickyHeader';
 import ProductGallery from './ProductGallery';
 import ProductRating from './ProductRating';
 import ProductInfo from './ProductInfo';
+import ProductNutritionalInfo from './ProductNutritionalInfo';
 import ProductOptions from './ProductOptions';
 import BuyMoreSaveMore from './BuyMoreSaveMore';
-import ProductAddToCart from './ProductAddToCart';
+import FrequentlyBoughtTogether from './FrequentlyBoughtTogether';
+import ProductAddToCart, { ProductDeliveryInfo } from './ProductAddToCart';
 import ProductStickyBottomBar from './ProductStickyBottomBar';
 import ProductPromoBanner from './ProductPromoBanner';
 import ProductScoopSection from './ProductScoopSection';
@@ -43,9 +46,12 @@ function ResolvedDetailBanner({ src, alt }: { src: string; alt: string }) {
   );
 }
 
+
+
 interface ProductPageProps {
   product: Product;
   cartCount: number;
+  announcementText?: string;
   onOpenCart: () => void;
   onOpenSearch: () => void;
   onBackToStore?: () => void;
@@ -59,13 +65,16 @@ interface ProductPageProps {
   ) => void;
   onSelectRelatedProduct?: (product: Product) => void;
   allProducts?: Product[];
+  allBundles?: BundleConfig[];
   liveReviews?: ReviewRecord[];
   liveBanners?: StoreBanner[];
+  onBuyNow?: () => void;
 }
 
 export default function ProductPage({
   product,
   cartCount,
+  announcementText,
   onOpenCart,
   onOpenSearch,
   onBackToStore,
@@ -73,8 +82,10 @@ export default function ProductPage({
   onAddToCart,
   onSelectRelatedProduct,
   allProducts = [],
+  allBundles = [],
   liveReviews = [],
-  liveBanners = []
+  liveBanners = [],
+  onBuyNow
 }: ProductPageProps) {
   // Compute default option values (e.g. { Flavor: 'Lemon Lime', Variant: '250g (83 Servings)' })
   const defaultOptionValues = useMemo(() => {
@@ -108,24 +119,144 @@ export default function ProductPage({
     return ['Lemon Lime', 'Tropical Tango 307g', 'Unflavored (250g)', 'Fruit Punch (250g)'];
   }, [product]);
 
-  // Active bundles
+  // Active bundles from baseline/product
   const activeBundles = useMemo(
     () => (product.bundles || []).filter((b) => b.enabled !== false),
     [product.bundles]
   );
 
-  // Selected bundle (optional; null when user sets custom quantity via +/- stepper)
-  const [selectedBundle, setSelectedBundle] = useState<BundleDeal | null>(null);
+  // Match bundles configured in Admin Combos & Bundles for this product
+  const matchingBundles = useMemo(() => {
+    return (allBundles || [])
+      .filter(
+        (b) =>
+          b.enabled &&
+          (b.targetProductIds?.includes('all') ||
+            b.targetProductIds?.includes(product.id) ||
+            b.targetProductIds?.length === 0)
+      )
+      .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+  }, [allBundles, product.id]);
+
+  // Buy More Save More tiers from Firestore bundles
+  const customMainBundles = useMemo(() => {
+    const list: BundleDeal[] = [];
+    matchingBundles
+      .filter((b) => b.bundleType === 'buy_more_save_more' && b.placement !== 'frequently_bought_together')
+      .forEach((b) => {
+        if (b.tiers && b.tiers.length > 0) {
+          b.tiers.forEach((t) => {
+            list.push({
+              id: `${b.id}-${t.id}`,
+              title: t.title,
+              quantity: t.quantity,
+              price: t.price,
+              originalPrice: t.originalPrice,
+              savingsAmount: t.savingsAmount,
+              savingsPercentage: t.savingsPercentage,
+              badgeText: t.badgeText || b.badgeText,
+              isPopular: t.isPopular ?? b.isPopular
+            });
+          });
+        }
+      });
+    return list;
+  }, [matchingBundles]);
+
+  // Product combo bundles
+  const comboBundles = useMemo(() => {
+    return matchingBundles.filter(
+      (b) =>
+        (b.bundleType === 'product_combo' || b.bundleType === 'complete_nutrition') &&
+        b.placement !== 'frequently_bought_together' &&
+        b.placement !== 'above_purchase' &&
+        b.placement !== 'below_purchase'
+    );
+  }, [matchingBundles]);
+
+  // Frequently bought together bundle
+  const fbtBundle = useMemo(() => {
+    return matchingBundles.find(
+      (b) =>
+        b.placement === 'frequently_bought_together' ||
+        b.bundleType === 'frequently_bought_together'
+    );
+  }, [matchingBundles]);
+
+  // Above and below purchase area custom bundles
+  const abovePurchaseBundles = useMemo(() => {
+    return matchingBundles.filter((b) => b.placement === 'above_purchase');
+  }, [matchingBundles]);
+
+  const belowPurchaseBundles = useMemo(() => {
+    return matchingBundles.filter((b) => b.placement === 'below_purchase');
+  }, [matchingBundles]);
+
+  // Effective bundles to display in the selector:
+  const effectiveBundles = useMemo(() => {
+    if (customMainBundles.length > 0) return customMainBundles;
+    if (activeBundles.length > 0) return activeBundles;
+
+    const uPrice = Number(product.price) || 2000;
+    const origPrice = Number(product.originalPrice) || Math.round(uPrice * 1.3);
+    return [
+      {
+        id: `bundle-auto-1-${product.id}`,
+        title: 'Buy 1',
+        quantity: 1,
+        price: uPrice,
+        originalPrice: origPrice,
+        savingsAmount: Math.max(0, origPrice - uPrice),
+        savingsPercentage: origPrice > uPrice ? Math.round(((origPrice - uPrice) / origPrice) * 100) : 0,
+        badgeText: 'STANDARD PACK',
+        isPopular: false,
+        isDefault: true,
+        requiresMultipleFlavors: false
+      },
+      {
+        id: `bundle-auto-2-${product.id}`,
+        title: 'Buy 2',
+        quantity: 2,
+        price: Math.round(uPrice * 2 * 0.9),
+        originalPrice: origPrice * 2,
+        savingsAmount: (origPrice * 2) - Math.round(uPrice * 2 * 0.9),
+        savingsPercentage: Math.max(5, Math.round((((origPrice * 2) - Math.round(uPrice * 2 * 0.9)) / (origPrice * 2)) * 100)),
+        badgeText: 'MOST POPULAR',
+        isPopular: true,
+        isDefault: false,
+        requiresMultipleFlavors: true
+      },
+      {
+        id: `bundle-auto-3-${product.id}`,
+        title: 'Buy 3',
+        quantity: 3,
+        price: Math.round(uPrice * 3 * 0.85),
+        originalPrice: origPrice * 3,
+        savingsAmount: (origPrice * 3) - Math.round(uPrice * 3 * 0.85),
+        savingsPercentage: Math.max(10, Math.round((((origPrice * 3) - Math.round(uPrice * 3 * 0.85)) / (origPrice * 3)) * 100)),
+        badgeText: 'BEST VALUE',
+        isPopular: false,
+        isDefault: false,
+        requiresMultipleFlavors: true
+      }
+    ];
+  }, [customMainBundles, activeBundles, product]);
+
+  // Selected bundle (pre-selected to default/single bundle)
+  const [selectedBundle, setSelectedBundle] = useState<BundleDeal | null>(() => {
+    return effectiveBundles.find((b) => b.isDefault) || effectiveBundles[0] || null;
+  });
 
   // Reset options, quantity, and scroll position to top when opening or switching between products
   useEffect(() => {
     setSelectedOptionValues(defaultOptionValues);
-    setQuantity(1);
-    setSelectedBundle(null);
+    const initialBundle = effectiveBundles.find((b) => b.isDefault) || effectiveBundles[0] || null;
+    setSelectedBundle(initialBundle);
+    setQuantity(initialBundle ? initialBundle.quantity : 1);
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
     document.documentElement.scrollTop = 0;
     document.body.scrollTop = 0;
-  }, [product.id, defaultOptionValues]);
+  }, [product.id, defaultOptionValues, effectiveBundles]);
 
   // Out-of-stock check
   const isSoldOut =
@@ -201,11 +332,18 @@ export default function ProductPage({
 
   const handleOptionChange = (name: string, value: string) => {
     setSelectedOptionValues((prev) => ({ ...prev, [name]: value }));
+    if (name.toLowerCase().includes('flavor')) {
+      setSelectedBundleFlavors((prev) => {
+        const next = [...prev];
+        next[0] = value;
+        return next;
+      });
+    }
   };
 
   const handleQuantityChange = (newQty: number) => {
     setQuantity(newQty);
-    const matchingBundle = activeBundles.find((b) => b.quantity === newQty) || null;
+    const matchingBundle = effectiveBundles.find((b) => b.quantity === newQty) || null;
     setSelectedBundle(matchingBundle);
   };
 
@@ -220,6 +358,11 @@ export default function ProductPage({
       next[index] = flavor;
       return next;
     });
+    if (index === 0) {
+      const flavorOptName =
+        product.options?.find((o) => o.name.toLowerCase().includes('flavor'))?.name || 'Flavor';
+      setSelectedOptionValues((prev) => ({ ...prev, [flavorOptName]: flavor }));
+    }
   };
 
   // Combine all selected options (e.g. "Lemon Lime • 250g (83 Servings)") for the cart item
@@ -289,29 +432,43 @@ export default function ProductPage({
       }
     });
 
-    const missingSections = DEFAULT_PAGE_SECTIONS.filter((d) => !seenTypes.has(d.type));
-    if (missingSections.length === 0) return deduplicated;
-
-    // Insert missing sections in their natural order before 'related'
-    const result: ProductSectionItem[] = [];
-    const relatedItem = deduplicated.find((s) => s.type === 'related');
-    deduplicated.forEach((s) => {
-      if (s.type !== 'related') {
-        result.push(s);
-      }
-    });
-    missingSections.forEach((m) => {
-      if (m.type !== 'related') {
-        result.push({ ...m, id: `sec-${m.type}` });
-      }
-    });
-    if (relatedItem) {
-      result.push({ ...relatedItem, id: 'sec-related' });
-    } else {
-      const defRel = DEFAULT_PAGE_SECTIONS.find((d) => d.type === 'related');
-      if (defRel) result.push({ ...defRel, id: 'sec-related' });
+    if (!seenTypes.has('description')) {
+      deduplicated.push({ id: 'sec-description', type: 'description', name: 'Product Description', enabled: true });
+      seenTypes.add('description');
     }
-    return result;
+    if (!seenTypes.has('benefits')) {
+      deduplicated.push({ id: 'sec-benefits', type: 'benefits', name: 'Product Benefits Grid', enabled: true });
+      seenTypes.add('benefits');
+    }
+
+    const missingSections = DEFAULT_PAGE_SECTIONS.filter((d) => !seenTypes.has(d.type));
+    const topTypes = ['gallery', 'rating', 'product_info', 'description', 'bundles', 'add_to_cart', 'options', 'frequently_bought_together', 'benefits'];
+    const topMap = new Map<string, ProductSectionItem>();
+
+    deduplicated.forEach(s => topMap.set(s.type, s));
+    missingSections.forEach(s => topMap.set(s.type, { ...s, id: `sec-${s.type}` }));
+
+    const orderedResult: ProductSectionItem[] = [];
+    topTypes.forEach(t => {
+      const item = topMap.get(t);
+      if (item) {
+        orderedResult.push(item);
+        topMap.delete(t);
+      }
+    });
+
+    topMap.forEach((item) => {
+      if (item.type !== 'related') {
+        orderedResult.push(item);
+      }
+    });
+
+    const relatedItem = topMap.get('related') || deduplicated.find(s => s.type === 'related') || DEFAULT_PAGE_SECTIONS.find(d => d.type === 'related');
+    if (relatedItem) {
+      orderedResult.push({ ...relatedItem, id: 'sec-related' });
+    }
+
+    return orderedResult;
   }, [product.pageSections]);
 
   // Render individual sections based on type
@@ -364,60 +521,11 @@ export default function ProductPage({
         );
 
       case 'options':
-        return (
-          <div key={item.id} className="w-full">
-            <ProductOptions
-              options={product.options}
-              variants={product.variants}
-              selectedOptionValues={selectedOptionValues}
-              onOptionChange={handleOptionChange}
-              quantity={quantity}
-              onQuantityChange={handleQuantityChange}
-              maxStock={maxStock}
-              isSoldOut={isSoldOut}
-            />
-          </div>
-        );
-
       case 'bundles':
-        return (
-          <div key={item.id} className="w-full">
-            <BuyMoreSaveMore
-              bundles={activeBundles}
-              selectedBundleId={selectedBundle?.id || ''}
-              onSelectBundle={handleSelectBundle}
-              availableFlavors={availableFlavors}
-              selectedBundleFlavors={selectedBundleFlavors}
-              onBundleFlavorChange={handleBundleFlavorChange}
-            />
-          </div>
-        );
-
       case 'add_to_cart':
-        return (
-          <div key={item.id} className="w-full space-y-4">
-            <ProductAddToCart
-              onAddToCart={handleAddToCartClick}
-              price={totalDisplayPrice}
-              originalPrice={totalDisplayOriginalPrice}
-              savingsPercentage={currentSavingsPercent}
-              bundleQuantity={selectedBundle ? selectedBundle.quantity : quantity}
-              isSoldOut={isSoldOut}
-              deliveryInfo={product.deliveryInfo}
-            />
-            {product.detailBanners && product.detailBanners.length > 0 && (
-              <div className="space-y-3 pt-2">
-                {product.detailBanners.map((bannerUrl, idx) => (
-                  <ResolvedDetailBanner
-                    key={`${bannerUrl}-${idx}`}
-                    src={bannerUrl}
-                    alt={`${product.name} detail ${idx + 1}`}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        );
+      case 'frequently_bought_together':
+        // Centrally encapsulated within unified ProductPurchaseFlow to prevent external layout logic from pushing bundles out of place
+        return null;
 
       case 'promo_banner':
         return (
@@ -534,7 +642,7 @@ export default function ProductPage({
   return (
     <div className="min-h-screen bg-white text-neutral-900 font-sans selection:bg-black selection:text-white flex flex-col pb-20 md:pb-0 [overflow-anchor:none]">
       {/* Top Announcement Bar */}
-      <AnnouncementBar />
+      <AnnouncementBar text={announcementText} />
 
       {/* 1. Sticky Ecommerce Header (Desktop + Mobile) */}
       <ProductStickyHeader
@@ -556,27 +664,116 @@ export default function ProductPage({
           </div>
 
           {/* Right Column: Product Information, Options, Quantity, Pricing & Purchasing */}
-          <div className="md:col-span-6 lg:col-span-5 w-full flex flex-col space-y-2">
+          <div className="md:col-span-6 lg:col-span-5 w-full flex flex-col space-y-4">
+            {/* Position 1 — Product Rating */}
             {renderSection(
               sections.find((s) => s.type === 'rating') || DEFAULT_PAGE_SECTIONS[1]
             )}
+
+            {/* Position 2 — Product Title & Tagline */}
             {renderSection(
               sections.find((s) => s.type === 'product_info') || DEFAULT_PAGE_SECTIONS[2]
             )}
+
+            {/* Position 3 — Product Description */}
             {renderSection(
-              sections.find((s) => s.type === 'options') || DEFAULT_PAGE_SECTIONS[3]
+              sections.find((s) => s.type === 'description') || { id: 'sec-description', type: 'description', name: 'Description', enabled: true }
             )}
-            {renderSection(
-              sections.find((s) => s.type === 'bundles') || DEFAULT_PAGE_SECTIONS[4]
+
+            {/* Position 5 — Bundle Selector / Buy More, Save More */}
+            <div className="w-full">
+              <BuyMoreSaveMore
+                bundles={effectiveBundles}
+                comboBundles={[...abovePurchaseBundles, ...comboBundles]}
+                selectedBundleId={selectedBundle?.id || ''}
+                onSelectBundle={handleSelectBundle}
+                availableFlavors={availableFlavors}
+                selectedBundleFlavors={selectedBundleFlavors}
+                onBundleFlavorChange={handleBundleFlavorChange}
+                productStock={product.stock}
+                isSoldOut={isSoldOut}
+              />
+            </div>
+
+            {/* Position 6 & 7 — Action Buttons (Add to Cart & Buy It Now) */}
+            <div className="w-full space-y-4">
+              <ProductAddToCart
+                onAddToCart={handleAddToCartClick}
+                onBuyNow={onBuyNow}
+                price={totalDisplayPrice}
+                originalPrice={totalDisplayOriginalPrice}
+                savingsPercentage={currentSavingsPercent}
+                bundleQuantity={selectedBundle ? selectedBundle.quantity : quantity}
+                isSoldOut={isSoldOut}
+                deliveryInfo={product.deliveryInfo}
+                showDeliveryInfo={false}
+              />
+            </div>
+
+            {/* Position 8 — Standalone Options / Variant Selector */}
+            {(!selectedBundle || selectedBundle.quantity === 1) && (
+              <div className="w-full">
+                <ProductOptions
+                  options={product.options}
+                  variants={product.variants}
+                  selectedOptionValues={selectedOptionValues}
+                  onOptionChange={handleOptionChange}
+                  quantity={quantity}
+                  onQuantityChange={handleQuantityChange}
+                  maxStock={maxStock}
+                  isSoldOut={isSoldOut}
+                  showQuantitySelector={!selectedBundle}
+                />
+              </div>
             )}
-            {renderSection(
-              sections.find((s) => s.type === 'add_to_cart') || DEFAULT_PAGE_SECTIONS[5]
+
+            {/* Position 9 — FREQUENTLY BOUGHT TOGETHER */}
+            <FrequentlyBoughtTogether
+              currentProduct={product}
+              bundleConfig={fbtBundle}
+              allProducts={allProducts}
+              onAddToCart={onAddToCart}
+            />
+
+            {/* Position 10 — Remaining existing product information & sections */}
+            <ProductNutritionalInfo product={product} />
+
+            {product.detailBanners && product.detailBanners.length > 0 && (
+              <div className="space-y-3 pt-2">
+                {product.detailBanners.map((bannerUrl, idx) => (
+                  <ResolvedDetailBanner
+                    key={`${bannerUrl}-${idx}`}
+                    src={bannerUrl}
+                    alt={`${product.name} detail ${idx + 1}`}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Delivery information and trust badges */}
+            <ProductDeliveryInfo deliveryInfo={product.deliveryInfo} />
+
+            {/* Bundles configured with placement 'below_purchase' */}
+            {belowPurchaseBundles.length > 0 && (
+              <div className="w-full">
+                <BuyMoreSaveMore
+                  bundles={[]}
+                  comboBundles={belowPurchaseBundles}
+                  selectedBundleId={selectedBundle?.id || ''}
+                  onSelectBundle={handleSelectBundle}
+                  availableFlavors={availableFlavors}
+                  selectedBundleFlavors={selectedBundleFlavors}
+                  onBundleFlavorChange={handleBundleFlavorChange}
+                  productStock={product.stock}
+                  isSoldOut={isSoldOut}
+                />
+              </div>
             )}
           </div>
         </div>
       </main>
 
-      {/* Subsequent Product Sections: Promotional Banner, In Every Scoop, Benefits, UGC, Testimonials, FAQ, Build Lean Physique, Related Products */}
+      {/* Subsequent Product Sections: Promotional Banner, In Every Scoop, UGC, Testimonials, FAQ, Build Lean Physique, Related Products */}
       <div className="w-full">
         {sections
           .filter(
@@ -588,8 +785,10 @@ export default function ProductPage({
                 'options',
                 'bundles',
                 'add_to_cart',
+                'frequently_bought_together',
                 'description',
-                'description_cta'
+                'description_cta',
+                'benefits'
               ].includes(s.type)
           )
           .map((s) => renderSection(s))}

@@ -29,6 +29,7 @@ import {
   CartItem,
   ShippingRegion,
   BundleDeal,
+  BundleConfig,
   ReviewRecord,
   StoreBanner,
   StoreSettings
@@ -38,6 +39,7 @@ import {
   subscribeToReviews,
   subscribeToBanners,
   subscribeToStoreSettings,
+  subscribeToBundles,
   saveProductToFirestore
 } from './services/firestoreService';
 import { auth, verifyAdminAccess } from './firebase';
@@ -53,6 +55,7 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [reviews, setReviews] = useState<ReviewRecord[]>([]);
   const [banners, setBanners] = useState<StoreBanner[]>([]);
+  const [bundles, setBundles] = useState<BundleConfig[]>([]);
   const [storeSettings, setStoreSettings] = useState<StoreSettings | null>(null);
 
   // Admin Route & Auth State (accessible ONLY via /#admin or /admin)
@@ -127,12 +130,16 @@ export default function App() {
     const unsubSettings = subscribeToStoreSettings((liveSettings) => {
       setStoreSettings(liveSettings);
     });
+    const unsubBundles = subscribeToBundles((liveBundles) => {
+      setBundles(liveBundles || []);
+    });
 
     return () => {
       unsubProducts();
       unsubReviews();
       unsubBanners();
       unsubSettings();
+      unsubBundles();
     };
   }, []);
 
@@ -318,6 +325,7 @@ export default function App() {
       <div className="relative min-h-screen bg-white">
         <ProductPage
           product={activeProduct}
+          announcementText={storeSettings?.announcementText}
           cartCount={totalCartCount}
           onOpenCart={() => setIsCartOpen(true)}
           onOpenSearch={() => setIsSearchOpen(true)}
@@ -325,8 +333,13 @@ export default function App() {
           onAddToCart={handleAddToCart}
           onSelectRelatedProduct={(p) => handleOpenProduct(p)}
           allProducts={products.filter((p) => p.isActive !== false)}
+          allBundles={bundles}
           liveReviews={reviews}
           liveBanners={banners}
+          onBuyNow={() => {
+            setIsCartOpen(false);
+            setIsCheckoutOpen(true);
+          }}
           onNavigatePage={(page) => {
             setActiveProductId(null);
             setCurrentStorePage(page);
@@ -378,7 +391,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-white text-neutral-900 font-sans selection:bg-black selection:text-white flex flex-col">
       {/* 1. Top Announcement Bar */}
-      <AnnouncementBar />
+      <AnnouncementBar text={storeSettings?.announcementText} />
 
       {/* 2. Sticky Navigation */}
       <Navbar

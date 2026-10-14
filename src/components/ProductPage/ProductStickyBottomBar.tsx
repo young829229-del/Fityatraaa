@@ -3,6 +3,7 @@ import { ShoppingBag } from 'lucide-react';
 
 interface ProductStickyBottomBarProps {
   productName: string;
+  productImage?: string;
   price: number;
   originalPrice: number;
   savingsPercentage: number;
@@ -14,9 +15,8 @@ interface ProductStickyBottomBarProps {
 
 export default function ProductStickyBottomBar({
   productName,
+  productImage,
   price,
-  originalPrice,
-  savingsPercentage,
   selectedFlavor,
   onAddToCart,
   isSoldOut = false,
@@ -40,50 +40,49 @@ export default function ProductStickyBottomBar({
   if (hide || !isVisible) return null;
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-neutral-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.1)] p-3 md:hidden transition-all duration-200">
+    <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-neutral-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] px-4 py-2.5 md:hidden transition-all duration-200">
       <div className="flex items-center justify-between gap-3">
-        {/* Left: Product Info & Pricing */}
-        <div className="flex flex-col min-w-0 pr-1">
-          <p className="text-xs font-bold text-neutral-900 truncate">{productName}</p>
-          <div className="flex items-baseline gap-1.5 flex-wrap">
-            <span className="text-sm font-black text-neutral-950 tabular-nums">
-              Rs {price.toLocaleString('en-US')}
-            </span>
-            {originalPrice > price && (
-              <span className="text-[11px] text-neutral-400 line-through tabular-nums">
-                Rs {originalPrice.toLocaleString('en-US')}
+        {/* Left: Thumbnail & Product Info matching screenshot */}
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+          {productImage && (
+            <img
+              src={productImage}
+              alt={productName}
+              className="w-10 h-10 object-contain rounded-lg border border-neutral-200 shrink-0 bg-white p-0.5"
+            />
+          )}
+          <div className="flex flex-col min-w-0">
+            <p className="text-xs font-bold text-neutral-900 truncate leading-tight">
+              {productName}
+            </p>
+            {selectedFlavor && (
+              <span className="text-[11px] text-neutral-500 truncate leading-tight mt-0.5">
+                {selectedFlavor}
               </span>
-            )}
-            {isSoldOut ? (
-              <span className="text-[9px] font-black uppercase tracking-wider text-white bg-neutral-900 px-1.5 py-0.5">
-                Sold Out
-              </span>
-            ) : (
-              savingsPercentage > 0 && (
-                <span className="text-[9px] font-black uppercase tracking-wider text-white bg-[#0c1a3b] px-1.5 py-0.5 tabular-nums">
-                  SAVE {savingsPercentage}%
-                </span>
-              )
             )}
           </div>
-          {selectedFlavor && (
-            <span className="text-[10px] text-neutral-500 truncate">{selectedFlavor}</span>
-          )}
         </div>
 
-        {/* Right: Add to cart / Sold Out Button */}
+        {/* Center/Right: Price */}
+        <div className="text-right shrink-0 pr-1">
+          <span className="text-sm font-bold text-neutral-950">
+            Rs{price.toLocaleString('en-US')}.00
+          </span>
+        </div>
+
+        {/* Right: Black square cart button matching screenshot */}
         <button
           type="button"
           onClick={onAddToCart}
           disabled={isSoldOut}
-          className={`shrink-0 font-black text-xs uppercase tracking-wider px-5 py-3 transition-all flex items-center gap-1.5 whitespace-nowrap ${
+          aria-label="Add to cart"
+          className={`w-11 h-11 rounded-xl shrink-0 transition-all flex items-center justify-center cursor-pointer ${
             isSoldOut
-              ? 'bg-neutral-300 text-neutral-600 cursor-not-allowed'
-              : 'bg-[#0c1a3b] hover:bg-neutral-900 active:scale-95 text-white shadow-sm cursor-pointer'
+              ? 'bg-neutral-300 text-neutral-500 cursor-not-allowed'
+              : 'bg-black hover:bg-neutral-900 active:scale-95 text-white shadow-xs'
           }`}
         >
-          <ShoppingBag className="w-4 h-4" />
-          <span>{isSoldOut ? 'Sold Out' : 'Add to cart'}</span>
+          <ShoppingBag className="w-5 h-5" />
         </button>
       </div>
     </div>

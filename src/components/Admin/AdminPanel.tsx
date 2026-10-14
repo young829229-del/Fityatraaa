@@ -8,7 +8,8 @@ import {
   StoreSettings,
   AdminActivity,
   ContactSubmission,
-  EmailSubscriber
+  EmailSubscriber,
+  BundleConfig
 } from '../../types';
 import AdminSidebar, { AdminTab } from './AdminSidebar';
 import AdminHeader from './AdminHeader';
@@ -16,6 +17,7 @@ import AdminDashboardTab from './AdminDashboardTab';
 import AdminOrdersTab from './AdminOrdersTab';
 import AdminCustomerDataTab from './AdminCustomerDataTab';
 import AdminProductsTab from './AdminProductsTab';
+import AdminCombosAndBundlesTab from './AdminCombosAndBundlesTab';
 import AdminStockTab from './AdminStockTab';
 import AdminReviewsTab from './AdminReviewsTab';
 import AdminPaymentsTab from './AdminPaymentsTab';
@@ -32,6 +34,7 @@ import {
   subscribeToAdminActivity,
   subscribeToContactSubmissions,
   subscribeToEmailSubscribers,
+  subscribeToBundles,
   saveProductToFirestore,
   deleteProductFromFirestore,
   updateOrderStatusInFirestore,
@@ -46,7 +49,9 @@ import {
   updateContactSubmissionStatusInFirestore,
   deleteContactSubmissionFromFirestore,
   saveEmailSubscriberToFirestore,
-  deleteEmailSubscriberFromFirestore
+  deleteEmailSubscriberFromFirestore,
+  saveBundleToFirestore,
+  deleteBundleFromFirestore
 } from '../../services/firestoreService';
 import { auth } from '../../firebase';
 
@@ -71,6 +76,7 @@ export default function AdminPanel({ onBackToStore, onOpenPageBuilder }: AdminPa
   const [banners, setBanners] = useState<StoreBanner[]>([]);
   const [contactSubmissions, setContactSubmissions] = useState<ContactSubmission[]>([]);
   const [emailSubscribers, setEmailSubscribers] = useState<EmailSubscriber[]>([]);
+  const [bundles, setBundles] = useState<BundleConfig[]>([]);
   const [storeSettings, setStoreSettings] = useState<StoreSettings>({
     id: 'general',
     openForOrders: true,
@@ -97,6 +103,9 @@ export default function AdminPanel({ onBackToStore, onOpenPageBuilder }: AdminPa
     const unsubSubscribers = subscribeToEmailSubscribers((liveSubs) =>
       setEmailSubscribers(liveSubs)
     );
+    const unsubBundles = subscribeToBundles((liveBundles) =>
+      setBundles(liveBundles)
+    );
 
     return () => {
       unsubOrders();
@@ -108,6 +117,7 @@ export default function AdminPanel({ onBackToStore, onOpenPageBuilder }: AdminPa
       unsubActivity();
       unsubContacts();
       unsubSubscribers();
+      unsubBundles();
     };
   }, []);
 
@@ -176,6 +186,8 @@ export default function AdminPanel({ onBackToStore, onOpenPageBuilder }: AdminPa
               products={products}
               reviews={reviews}
               activities={activities}
+              storeSettings={storeSettings}
+              onUpdateStoreSettings={updateStoreSettingsInFirestore}
               onViewOrder={handleViewOrder}
               onNavigateToTab={(tab) => setCurrentTab(tab)}
             />
@@ -221,6 +233,15 @@ export default function AdminPanel({ onBackToStore, onOpenPageBuilder }: AdminPa
               onSaveProduct={saveProductToFirestore}
               onDeleteProduct={deleteProductFromFirestore}
               onOpenPageBuilder={onOpenPageBuilder}
+            />
+          )}
+
+          {currentTab === 'combos_and_bundles' && (
+            <AdminCombosAndBundlesTab
+              bundles={bundles}
+              products={products}
+              onSaveBundle={saveBundleToFirestore}
+              onDeleteBundle={deleteBundleFromFirestore}
             />
           )}
 

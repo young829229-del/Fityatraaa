@@ -20,6 +20,67 @@ export interface BundleDeal {
   image?: string;
 }
 
+export type BundleType =
+  | 'buy_more_save_more'
+  | 'product_combo'
+  | 'frequently_bought_together'
+  | 'complete_nutrition';
+
+export type BundlePlacementType =
+  | 'main_selector'
+  | 'frequently_bought_together'
+  | 'above_purchase'
+  | 'below_purchase';
+
+export interface BundleItemConfig {
+  productId: string;
+  productName: string;
+  quantity: number;
+  price: number;
+  originalPrice: number;
+  image?: string;
+  selectedVariant?: string;
+  allowCustomerVariantSelection?: boolean;
+}
+
+export interface BundleTierConfig {
+  id: string;
+  title: string;
+  quantity: number;
+  price: number;
+  originalPrice: number;
+  savingsAmount: number;
+  savingsPercentage: number;
+  badgeText?: string;
+  isPopular?: boolean;
+}
+
+export interface BundleConfig {
+  id: string;
+  title: string;
+  adminLabel?: string;
+  description?: string;
+  bundleType: BundleType;
+  badgeText?: string;
+  isPopular?: boolean;
+  enabled: boolean;
+  sellingPrice: number;
+  originalPrice: number;
+  savingsAmount: number;
+  savingsPercentage: number;
+  image?: string;
+  items: BundleItemConfig[];
+  tiers?: BundleTierConfig[];
+  targetProductIds: string[]; // ['all'] or array of specific product IDs
+  placement: BundlePlacementType;
+  displayOrder: number;
+  frequentlyBoughtDiscountPercentage?: number;
+  startDate?: string;
+  endDate?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface ProductBenefit {
   id: string;
   icon: string; // Emoji, SVG icon name, or image URL
@@ -99,8 +160,9 @@ export type ProductSectionType =
   | 'gallery'
   | 'rating'
   | 'product_info'
-  | 'options'
   | 'bundles'
+  | 'frequently_bought_together'
+  | 'options'
   | 'add_to_cart'
   | 'promo_banner'
   | 'scoop_editorial'

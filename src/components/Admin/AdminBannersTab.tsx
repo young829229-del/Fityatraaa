@@ -61,6 +61,22 @@ export default function AdminBannersTab({
     storeSettings?.announcementText || 'Make Health Better Again'
   );
   const [settingsDirty, setSettingsDirty] = useState(false);
+  const [isSavingAnnouncement, setIsSavingAnnouncement] = useState(false);
+  const [isAnnouncementSaved, setIsAnnouncementSaved] = useState(false);
+
+  const handleSaveAnnouncementOnly = async () => {
+    if (!onUpdateStoreSettings) return;
+    setIsSavingAnnouncement(true);
+    try {
+      await onUpdateStoreSettings({ announcementText: announcementText.trim() });
+      setIsAnnouncementSaved(true);
+      setTimeout(() => setIsAnnouncementSaved(false), 2500);
+    } catch (err: any) {
+      console.error('Failed to save announcement bar:', err);
+    } finally {
+      setIsSavingAnnouncement(false);
+    }
+  };
 
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [videoUploadProgress, setVideoUploadProgress] = useState(0);
@@ -387,16 +403,38 @@ export default function AdminBannersTab({
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-1">
                   Top Announcement Bar Text
                 </label>
-                <input
-                  type="text"
-                  value={announcementText}
-                  onChange={(e) => {
-                    setSettingsDirty(true);
-                    setAnnouncementText(e.target.value);
-                  }}
-                  placeholder="Make Health Better Again"
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-[#FFCD00]"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={announcementText}
+                    onChange={(e) => {
+                      setSettingsDirty(true);
+                      setAnnouncementText(e.target.value);
+                    }}
+                    placeholder="Make Health Better Again"
+                    className="flex-1 bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-[#FFCD00]"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveAnnouncementOnly}
+                    disabled={isSavingAnnouncement}
+                    className="px-4 py-2.5 bg-[#FFCD00] hover:bg-[#ffe04d] text-black font-black text-xs uppercase tracking-wider rounded-lg transition-colors cursor-pointer shrink-0 flex items-center gap-1.5"
+                  >
+                    {isSavingAnnouncement ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Saving...</span>
+                      </>
+                    ) : isAnnouncementSaved ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-black" />
+                        <span>Saved</span>
+                      </>
+                    ) : (
+                      <span>Save</span>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
 

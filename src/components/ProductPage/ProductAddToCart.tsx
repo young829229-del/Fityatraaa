@@ -4,19 +4,23 @@ import { DeliveryInfoConfig } from '../../types';
 
 interface ProductAddToCartProps {
   onAddToCart: () => void;
+  onBuyNow?: () => void;
   price: number;
   originalPrice?: number;
   savingsPercentage?: number;
   bundleQuantity?: number;
   isSoldOut?: boolean;
   deliveryInfo?: DeliveryInfoConfig;
+  showDeliveryInfo?: boolean;
 }
 
 export default function ProductAddToCart({
   onAddToCart,
+  onBuyNow,
   price,
   isSoldOut = false,
-  deliveryInfo
+  deliveryInfo,
+  showDeliveryInfo = true
 }: ProductAddToCartProps) {
   const [buttonState, setButtonState] = useState<'idle' | 'adding' | 'added'>('idle');
 
@@ -32,6 +36,14 @@ export default function ProductAddToCart({
     }, 180);
   };
 
+  const handleBuyNow = () => {
+    if (isSoldOut) return;
+    onAddToCart();
+    if (onBuyNow) {
+      onBuyNow();
+    }
+  };
+
   // Compute dynamic delivery date range (e.g. Tomorrow - 2 days from now)
   const tomorrow = new Date(Date.now() + 86400000);
   const twoDaysOut = new Date(Date.now() + 2 * 86400000);
@@ -39,41 +51,67 @@ export default function ProductAddToCart({
     d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
   return (
-    <div className="w-full flex flex-col space-y-4 py-3">
-      {/* Primary Add to Cart / Sold Out Button */}
+    <div className="w-full flex flex-col space-y-2 py-1">
+      {/* Primary Add to Cart / Sold Out Button matching screenshot: dark teal with bag icon */}
       <button
         type="button"
         onClick={handleClick}
         disabled={isSoldOut || buttonState === 'adding'}
-        className={`w-full font-black text-base sm:text-lg tracking-wider uppercase py-4 px-6 transition-all duration-150 flex items-center justify-center gap-3 ${
+        className={`w-full font-bold text-sm sm:text-base py-3.5 px-4 rounded-xl transition-all flex items-center justify-center gap-2.5 shadow-xs ${
           isSoldOut
             ? 'bg-neutral-300 text-neutral-600 cursor-not-allowed'
             : buttonState === 'added'
             ? 'bg-emerald-700 text-white cursor-pointer'
-            : 'bg-[#0c1a3b] hover:bg-neutral-900 active:scale-[0.99] text-white shadow-md cursor-pointer group'
+            : 'bg-[#07363c] hover:bg-[#05282d] active:scale-[0.99] text-white cursor-pointer group'
         }`}
       >
         {isSoldOut ? (
-          <span>Sold Out</span>
+          <span>Sold out</span>
         ) : buttonState === 'adding' ? (
           <>
-            <Loader2 className="w-5 h-5 animate-spin" />
-            <span>Adding to Cart...</span>
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>Adding to cart...</span>
           </>
         ) : buttonState === 'added' ? (
           <>
-            <Check className="w-5 h-5" />
-            <span>Added to Cart — Rs {price.toLocaleString('en-US')}</span>
+            <Check className="w-4 h-4" />
+            <span>Added to cart</span>
           </>
         ) : (
           <>
-            <ShoppingBag className="w-5 h-5 transition-transform group-hover:scale-110" />
-            <span>Add to Cart — Rs {price.toLocaleString('en-US')}</span>
+            <ShoppingBag className="w-4 h-4 transition-transform group-hover:scale-105" />
+            <span>Add to cart</span>
           </>
         )}
       </button>
 
-      {/* Delivery-Estimation Area */}
+      {/* Buy It Now Button matching screenshot: solid black */}
+      {!isSoldOut && (
+        <button
+          type="button"
+          onClick={handleBuyNow}
+          className="w-full font-bold text-sm sm:text-base py-3.5 px-4 rounded-xl transition-all flex items-center justify-center bg-black hover:bg-neutral-900 active:scale-[0.99] text-white cursor-pointer"
+        >
+          <span>Buy it now</span>
+        </button>
+      )}
+
+      {/* Delivery-Estimation & Trust Area */}
+      {showDeliveryInfo && (
+        <ProductDeliveryInfo deliveryInfo={deliveryInfo} />
+      )}
+    </div>
+  );
+}
+
+export function ProductDeliveryInfo({ deliveryInfo }: { deliveryInfo?: DeliveryInfoConfig }) {
+  const tomorrow = new Date(Date.now() + 86400000);
+  const twoDaysOut = new Date(Date.now() + 2 * 86400000);
+  const formatShortDate = (d: Date) =>
+    d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+  return (
+    <div className="w-full flex flex-col space-y-2.5 pt-1">
       {deliveryInfo?.enabled !== false && (
         <div className="w-full bg-[#F9F9F8] border border-neutral-200/90 p-4 space-y-2.5 text-xs sm:text-sm text-neutral-800">
           <div className="flex items-start gap-2.5">
@@ -109,7 +147,7 @@ export default function ProductAddToCart({
       )}
 
       {/* Trust Row */}
-      <div className="grid grid-cols-3 gap-2 text-center pt-1 text-[11px] font-semibold text-neutral-600">
+      <div className="grid grid-cols-3 gap-2 text-center text-[11px] font-semibold text-neutral-600">
         <div className="flex flex-col items-center p-2 bg-neutral-50 border border-neutral-200/60">
           <Clock className="w-4 h-4 text-neutral-900 mb-1" />
           <span>24h Dispatch</span>

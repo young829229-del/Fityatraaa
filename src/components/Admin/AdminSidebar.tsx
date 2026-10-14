@@ -24,6 +24,7 @@ export type AdminTab =
   | 'orders'
   | 'customer_data'
   | 'products'
+  | 'combos_and_bundles'
   | 'stock'
   | 'reviews'
   | 'payments'
@@ -88,6 +89,12 @@ export default function AdminSidebar({
       id: 'products' as AdminTab,
       label: 'Products',
       icon: Package,
+      badge: null
+    },
+    {
+      id: 'combos_and_bundles' as AdminTab,
+      label: 'Combos & Bundles',
+      icon: Flame,
       badge: null
     },
     {

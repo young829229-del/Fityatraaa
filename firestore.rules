@@ -131,7 +131,13 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // 12. Test Collection (for connectivity check)
+    // 12. Bundles & Combos Collection
+    match /bundles/{bundleId} {
+      allow get, list: if true;
+      allow create, update, delete: if isValidId(bundleId);
+    }
+
+    // 13. Test Collection (for connectivity check)
     match /test/{testId} {
       allow get: if true;
     }

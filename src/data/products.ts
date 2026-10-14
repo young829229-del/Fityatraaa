@@ -12,12 +12,14 @@ export const DEFAULT_PAGE_SECTIONS: ProductSectionItem[] = [
   { id: 'sec-gallery', type: 'gallery', name: 'Main Product Gallery', enabled: true },
   { id: 'sec-rating', type: 'rating', name: 'Product Rating & Reviews Count', enabled: true },
   { id: 'sec-product_info', type: 'product_info', name: 'Product Title & Tagline', enabled: true },
-  { id: 'sec-options', type: 'options', name: 'Product Options (Flavor & Variant)', enabled: true },
+  { id: 'sec-description', type: 'description', name: 'Product Description', enabled: true },
   { id: 'sec-bundles', type: 'bundles', name: 'Buy More, Save More (Bundles)', enabled: true },
-  { id: 'sec-add_to_cart', type: 'add_to_cart', name: 'Add to Cart & Delivery Info', enabled: true },
+  { id: 'sec-add_to_cart', type: 'add_to_cart', name: 'Add to Cart & Buy It Now', enabled: true },
+  { id: 'sec-options', type: 'options', name: 'Product Options (Flavor & Variant)', enabled: true },
+  { id: 'sec-frequently_bought_together', type: 'frequently_bought_together', name: 'Frequently Bought Together', enabled: true },
+  { id: 'sec-benefits', type: 'benefits', name: 'Product Benefits & Nutritional Information', enabled: true },
   { id: 'sec-promo_banner', type: 'promo_banner', name: 'Promotional Banner (Free Delivery)', enabled: true },
   { id: 'sec-scoop_editorial', type: 'scoop_editorial', name: 'In Every Scoop Editorial Section', enabled: true },
-  { id: 'sec-benefits', type: 'benefits', name: 'Product Benefits Grid', enabled: true },
   { id: 'sec-customer_ugc', type: 'customer_ugc', name: 'Customer UGC Image Gallery', enabled: true },
   { id: 'sec-testimonials', type: 'testimonials', name: 'Customer Testimonial Carousel', enabled: true },
   { id: 'sec-faq', type: 'faq', name: 'Product FAQ Accordion', enabled: true },
@@ -617,6 +619,40 @@ export const PRODUCTS: Product[] = [
     servingSize: '1 Tablet after breakfast',
     hasOptions: false,
     variants: ['60 Tablets Bottle'],
+    bundles: [
+      {
+        id: 'bmv-1',
+        title: 'Buy 1',
+        quantity: 1,
+        price: 1500,
+        originalPrice: 2100,
+        savingsAmount: 600,
+        savingsPercentage: 28,
+        isDefault: true
+      },
+      {
+        id: 'bmv-2',
+        title: 'Buy 2',
+        quantity: 2,
+        price: 2799,
+        originalPrice: 4200,
+        savingsAmount: 1401,
+        savingsPercentage: 33,
+        badgeText: 'MOST POPULAR',
+        isPopular: true
+      },
+      {
+        id: 'bmv-3',
+        title: 'Buy 3',
+        quantity: 3,
+        price: 3999,
+        originalPrice: 6300,
+        savingsAmount: 2301,
+        savingsPercentage: 36,
+        badgeText: 'BEST VALUE',
+        isPopular: false
+      }
+    ],
     faqs: DEFAULT_PRODUCT_FAQS,
     deliveryInfo: DEFAULT_DELIVERY_INFO,
     pageSections: DEFAULT_PAGE_SECTIONS
@@ -655,6 +691,40 @@ export const PRODUCTS: Product[] = [
     servings: '1kg Tub',
     hasOptions: false,
     variants: ['1kg Crunchy'],
+    bundles: [
+      {
+        id: 'bpb-1',
+        title: 'Buy 1',
+        quantity: 1,
+        price: 1200,
+        originalPrice: 1500,
+        savingsAmount: 300,
+        savingsPercentage: 20,
+        isDefault: true
+      },
+      {
+        id: 'bpb-2',
+        title: 'Buy 2',
+        quantity: 2,
+        price: 2199,
+        originalPrice: 3000,
+        savingsAmount: 801,
+        savingsPercentage: 26,
+        badgeText: 'MOST POPULAR',
+        isPopular: true
+      },
+      {
+        id: 'bpb-3',
+        title: 'Buy 3',
+        quantity: 3,
+        price: 3199,
+        originalPrice: 4500,
+        savingsAmount: 1301,
+        savingsPercentage: 28,
+        badgeText: 'BEST VALUE',
+        isPopular: false
+      }
+    ],
     faqs: DEFAULT_PRODUCT_FAQS,
     deliveryInfo: DEFAULT_DELIVERY_INFO,
     pageSections: DEFAULT_PAGE_SECTIONS
@@ -696,6 +766,43 @@ export const PRODUCTS: Product[] = [
         values: ['1kg (30 Servings)', '2kg (60 Servings)']
       }
     ],
+    bundles: [
+      {
+        id: 'bfo-1',
+        title: 'Buy 1',
+        quantity: 1,
+        price: 4900,
+        originalPrice: 6500,
+        savingsAmount: 1600,
+        savingsPercentage: 24,
+        isDefault: true,
+        requiresMultipleFlavors: false
+      },
+      {
+        id: 'bfo-2',
+        title: 'Buy 2',
+        quantity: 2,
+        price: 8999,
+        originalPrice: 13000,
+        savingsAmount: 4001,
+        savingsPercentage: 30,
+        badgeText: 'MOST POPULAR',
+        isPopular: true,
+        requiresMultipleFlavors: true
+      },
+      {
+        id: 'bfo-3',
+        title: 'Buy 3',
+        quantity: 3,
+        price: 12999,
+        originalPrice: 19500,
+        savingsAmount: 6501,
+        savingsPercentage: 33,
+        badgeText: 'BEST VALUE',
+        isPopular: false,
+        requiresMultipleFlavors: true
+      }
+    ],
     faqs: DEFAULT_PRODUCT_FAQS,
     deliveryInfo: DEFAULT_DELIVERY_INFO,
     pageSections: DEFAULT_PAGE_SECTIONS
@@ -735,6 +842,40 @@ export const PRODUCTS: Product[] = [
     servingSize: '3g Scoop',
     hasOptions: false,
     variants: ['250g (83 Servings) - Unflavored'],
+    bundles: [
+      {
+        id: 'bmc-1',
+        title: 'Buy 1',
+        quantity: 1,
+        price: 2450,
+        originalPrice: 3499,
+        savingsAmount: 1049,
+        savingsPercentage: 30,
+        isDefault: true
+      },
+      {
+        id: 'bmc-2',
+        title: 'Buy 2',
+        quantity: 2,
+        price: 4499,
+        originalPrice: 6998,
+        savingsAmount: 2499,
+        savingsPercentage: 35,
+        badgeText: 'MOST POPULAR',
+        isPopular: true
+      },
+      {
+        id: 'bmc-3',
+        title: 'Buy 3',
+        quantity: 3,
+        price: 6499,
+        originalPrice: 10497,
+        savingsAmount: 3998,
+        savingsPercentage: 38,
+        badgeText: 'BEST VALUE',
+        isPopular: false
+      }
+    ],
     faqs: DEFAULT_PRODUCT_FAQS,
     deliveryInfo: DEFAULT_DELIVERY_INFO,
     pageSections: DEFAULT_PAGE_SECTIONS
@@ -909,6 +1050,60 @@ export function enrichProductWithDefaults(product: Product): Product {
     relatedHeading: product.relatedHeading || 'You May Also Like',
     relatedSubheading: product.relatedSubheading || 'Complete Your Gains.'
   };
+
+  const rawBundles =
+    product.bundles && product.bundles.length > 0
+      ? product.bundles
+      : baseline?.bundles && baseline.bundles.length > 0
+      ? baseline.bundles
+      : [];
+
+  const effectiveBundles =
+    rawBundles.length > 0
+      ? rawBundles
+      : [
+          {
+            id: `bundle-auto-1-${product.id}`,
+            title: 'Buy 1',
+            quantity: 1,
+            price: Number(product.price) || 2000,
+            originalPrice: Number(product.originalPrice) || Math.round((Number(product.price) || 2000) * 1.3),
+            savingsAmount: Math.max(0, (Number(product.originalPrice) || Math.round((Number(product.price) || 2000) * 1.3)) - (Number(product.price) || 2000)),
+            savingsPercentage: 20,
+            badgeText: 'STANDARD PACK',
+            isPopular: false,
+            isDefault: true,
+            requiresMultipleFlavors: false
+          },
+          {
+            id: `bundle-auto-2-${product.id}`,
+            title: 'Buy 2',
+            quantity: 2,
+            price: Math.round((Number(product.price) || 2000) * 2 * 0.9),
+            originalPrice: (Number(product.originalPrice) || Math.round((Number(product.price) || 2000) * 1.3)) * 2,
+            savingsAmount: ((Number(product.originalPrice) || Math.round((Number(product.price) || 2000) * 1.3)) * 2) - Math.round((Number(product.price) || 2000) * 2 * 0.9),
+            savingsPercentage: 30,
+            badgeText: 'MOST POPULAR',
+            isPopular: true,
+            isDefault: false,
+            requiresMultipleFlavors: true
+          },
+          {
+            id: `bundle-auto-3-${product.id}`,
+            title: 'Buy 3',
+            quantity: 3,
+            price: Math.round((Number(product.price) || 2000) * 3 * 0.85),
+            originalPrice: (Number(product.originalPrice) || Math.round((Number(product.price) || 2000) * 1.3)) * 3,
+            savingsAmount: ((Number(product.originalPrice) || Math.round((Number(product.price) || 2000) * 1.3)) * 3) - Math.round((Number(product.price) || 2000) * 3 * 0.85),
+            savingsPercentage: 35,
+            badgeText: 'BEST VALUE',
+            isPopular: false,
+            isDefault: false,
+            requiresMultipleFlavors: true
+          }
+        ];
+
+  enriched.bundles = effectiveBundles;
 
   if (options && options.length > 0) {
     enriched.options = options;
