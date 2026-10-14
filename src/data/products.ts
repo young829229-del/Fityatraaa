@@ -1034,7 +1034,7 @@ export function enrichProductWithDefaults(product: Product): Product {
   const enriched: Product = {
     ...(baseline || {}),
     ...product,
-    image: cleanImage,
+    image: (activeGallery.length > 0 ? activeGallery[0] : cleanImage) || cleanImage,
     gallery: activeGallery,
     price: Number(product.price) || 0,
     originalPrice: Number(product.originalPrice ?? product.price) || 0,

@@ -10,7 +10,7 @@ interface ProductCardProps {
 
 export default function ProductCard({ product, onSelectProduct, onAddToCartDirect }: ProductCardProps) {
   const primaryImageSrc =
-    product.image || (product.gallery && product.gallery.length > 0 ? product.gallery[0] : '');
+    (product.gallery && product.gallery.length > 0 ? product.gallery[0] : '') || product.image || '';
   const resolvedImage = useResolvedMediaUrl(primaryImageSrc);
 
   const formattedPrice = `${product.pricePrefix || ''}Rs${product.price.toLocaleString('en-US')}.00`;

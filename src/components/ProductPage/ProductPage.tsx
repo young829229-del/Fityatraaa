@@ -477,12 +477,12 @@ export default function ProductPage({
 
     switch (item.type) {
       case 'gallery': {
-        const galleryImages = Array.from(
-          new Set([
-            ...(product.image ? [product.image] : []),
-            ...(product.gallery || []).filter(Boolean)
-          ])
-        );
+        const galleryImages =
+          product.gallery && product.gallery.length > 0
+            ? product.gallery.filter(Boolean)
+            : product.image
+            ? [product.image]
+            : [];
         return (
           <div key={item.id} className="w-full">
             <ProductGallery

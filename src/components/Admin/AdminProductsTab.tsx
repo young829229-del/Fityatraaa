@@ -7,7 +7,13 @@ import {
   X,
   Image as ImageIcon,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  GripVertical,
+  ArrowLeft,
+  ArrowRight,
+  Eye,
+  Star,
+  Trash2
 } from 'lucide-react';
 import { Product } from '../../types';
 import { uploadFileToStorage, useResolvedMediaUrl } from '../../services/storageService';
@@ -73,12 +79,18 @@ export default function AdminProductsTab({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccessBanner, setSaveSuccessBanner] = useState<string | null>(null);
 
-  // Upload loading states for the 3 dropzones
-  const [uploadingMain, setUploadingMain] = useState(false);
+  // Gallery Drag-and-Drop and Preview States
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [touchDraggingIndex, setTouchDraggingIndex] = useState<number | null>(null);
+  const [previewModalUrl, setPreviewModalUrl] = useState<string | null>(null);
+  const [showOrderPreview, setShowOrderPreview] = useState(false);
+
+  // Upload loading states
   const [uploadingGallery, setUploadingGallery] = useState(false);
   const [uploadingBanners, setUploadingBanners] = useState(false);
 
-  const mainInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const bannersInputRef = useRef<HTMLInputElement>(null);
 
@@ -91,17 +103,27 @@ export default function AdminProductsTab({
 
   const openEditorForProduct = (prod: Product) => {
     setSaveError(null);
-    const galleryList =
-      prod.gallery && prod.gallery.length > 0
-        ? prod.gallery
-        : prod.image
-        ? [prod.image]
-        : [];
+    setHasUnsavedChanges(false);
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+    setTouchDraggingIndex(null);
+    setShowOrderPreview(false);
+
+    let galleryList: string[] = [];
+    if (prod.gallery && prod.gallery.length > 0) {
+      galleryList = [...prod.gallery].filter(Boolean);
+      if (prod.image && !galleryList.includes(prod.image)) {
+        galleryList = [prod.image, ...galleryList];
+      }
+    } else if (prod.image) {
+      galleryList = [prod.image];
+    }
     const bannersList = prod.detailBanners || [];
 
     setEditingProduct({
       ...prod,
       stock: typeof prod.stock === 'number' ? prod.stock : prod.isSoldOut ? 0 : 50,
+      image: galleryList[0] || prod.image || '',
       gallery: galleryList,
       detailBanners: bannersList
     });
@@ -136,33 +158,43 @@ export default function AdminProductsTab({
     openEditorForProduct(newProd);
   };
 
-  // Upload helper for Main Supplement Image (Single Photo)
-  const handleMainFiles = async (files: FileList | null) => {
-    if (!files || files.length === 0 || !editingProduct) return;
-    setUploadingMain(true);
-    setSaveError(null);
-    try {
-      const res = await uploadFileToStorage(files[0], `products/${editingProduct.id}/main`);
-      if (res.url) {
-        setEditingProduct((prev) => {
-          if (!prev) return prev;
-          const otherGallery = (prev.gallery || []).filter(
-            (img) => img && img !== prev.image && img !== res.url
-          );
-          return {
-            ...prev,
-            image: res.url,
-            gallery: [res.url, ...otherGallery]
-          };
-        });
-      }
-    } catch (err) {
-      console.error('Main image upload error:', err);
-      setSaveError('Failed to upload main image. Please try again.');
-    } finally {
-      setUploadingMain(false);
-      if (mainInputRef.current) mainInputRef.current.value = '';
-    }
+  // Gallery Reordering logic (Drag & Drop, Move Left/Right, Set Main, Remove)
+  const reorderGallery = (fromIndex: number, toIndex: number) => {
+    if (!editingProduct) return;
+    if (fromIndex === toIndex) return;
+    const currentList = [...(editingProduct.gallery || [])];
+    if (fromIndex < 0 || fromIndex >= currentList.length) return;
+    if (toIndex < 0 || toIndex >= currentList.length) return;
+
+    const [movedItem] = currentList.splice(fromIndex, 1);
+    currentList.splice(toIndex, 0, movedItem);
+
+    setEditingProduct({
+      ...editingProduct,
+      gallery: currentList,
+      image: currentList[0] || ''
+    });
+    setHasUnsavedChanges(true);
+  };
+
+  const moveImage = (index: number, direction: 'left' | 'right') => {
+    const target = direction === 'left' ? index - 1 : index + 1;
+    reorderGallery(index, target);
+  };
+
+  const makeMainImage = (index: number) => {
+    reorderGallery(index, 0);
+  };
+
+  const removeGalleryImage = (index: number) => {
+    if (!editingProduct) return;
+    const currentList = (editingProduct.gallery || []).filter((_, i) => i !== index);
+    setEditingProduct({
+      ...editingProduct,
+      gallery: currentList,
+      image: currentList[0] || ''
+    });
+    setHasUnsavedChanges(true);
   };
 
   // Upload helper for Product Gallery Album (Multi-Photo)
@@ -182,11 +214,12 @@ export default function AdminProductsTab({
           prev
             ? {
                 ...prev,
-                image: prev.image || nextGallery[0] || '',
+                image: nextGallery[0] || '',
                 gallery: nextGallery
               }
             : prev
         );
+        setHasUnsavedChanges(true);
       }
     } catch (err) {
       console.error('Gallery upload error:', err);
@@ -261,6 +294,9 @@ export default function AdminProductsTab({
           ? Math.round(((cleanOrigPrice - cleanPrice) / cleanOrigPrice) * 100)
           : 0;
 
+      // The first image in the saved gallery automatically becomes the main product image
+      const primaryImage = galleryList[0] || '';
+
       const finalProduct: Product = {
         ...editingProduct,
         name: trimmedName,
@@ -270,13 +306,8 @@ export default function AdminProductsTab({
         originalPrice: cleanOrigPrice,
         stock: cleanStock,
         isSoldOut: Boolean(editingProduct.isSoldOut) || cleanStock <= 0,
-        image: editingProduct.image || galleryList[0] || '',
-        gallery:
-          galleryList.length > 0
-            ? galleryList
-            : editingProduct.image
-            ? [editingProduct.image]
-            : [],
+        image: primaryImage,
+        gallery: galleryList,
         detailBanners: bannersList,
         discountPercentage,
         badgeType: editingProduct.isSoldOut || cleanStock <= 0 ? 'soldout' : 'sale'
@@ -284,6 +315,7 @@ export default function AdminProductsTab({
 
       await onSaveProduct(finalProduct);
       setEditingProduct(null);
+      setHasUnsavedChanges(false);
       setSaveSuccessBanner(`Saved "${finalProduct.name}" to Firebase successfully.`);
       setTimeout(() => setSaveSuccessBanner(null), 4000);
     } catch (err: any) {
@@ -644,138 +676,311 @@ export default function AdminProductsTab({
                 />
               </div>
 
-              {/* Block 5: MAIN SUPPLEMENT IMAGE (SINGLE PHOTO) */}
-              <div className="border border-neutral-200/90 rounded-2xl p-4 sm:p-5 space-y-4 bg-white">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-neutral-800">
-                    MAIN SUPPLEMENT IMAGE
-                  </span>
-                  <span className="bg-neutral-900 text-[#FACC15] text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded shrink-0">
-                    SINGLE PHOTO
-                  </span>
+              {/* Product Image Gallery (Unified with Drag-and-Drop Reordering) */}
+              <div className="border border-neutral-200/90 rounded-2xl p-4 sm:p-5 space-y-4 bg-white shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-neutral-100 pb-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-neutral-900 flex items-center gap-1.5">
+                        <ImageIcon className="w-4 h-4 text-amber-500" />
+                        <span>Product Image Gallery</span>
+                      </span>
+                      <span className="bg-neutral-900 text-[#FACC15] text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded">
+                        Drag &amp; Drop Order
+                      </span>
+                      {hasUnsavedChanges && (
+                        <span className="bg-amber-100 text-amber-800 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-amber-200 animate-pulse">
+                          Unsaved Order
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-neutral-500 mt-1">
+                      Drag and drop images into your preferred display order. The <strong className="text-neutral-900 font-bold">1st image</strong> automatically becomes the main product photo across the store.
+                    </p>
+                  </div>
+
+                  {(editingProduct.gallery || []).length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowOrderPreview(!showOrderPreview)}
+                      className="self-start sm:self-auto text-xs font-bold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>{showOrderPreview ? 'Hide Order Preview' : 'Preview Live Order'}</span>
+                    </button>
+                  )}
                 </div>
 
+                {/* Optional Live Order Sequence Bar */}
+                {showOrderPreview && (editingProduct.gallery || []).length > 0 && (
+                  <div className="bg-[#FAF9F6] border border-amber-200/80 rounded-xl p-3 space-y-2">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-amber-900">
+                      Live Store Display Sequence Preview:
+                    </p>
+                    <div className="flex items-center gap-2 overflow-x-auto py-1">
+                      {(editingProduct.gallery || []).map((imgUrl, i) => (
+                        <div key={`preview-order-${i}`} className="flex items-center gap-1.5 shrink-0">
+                          <div className="relative w-14 h-14 rounded-lg overflow-hidden border border-neutral-300 bg-white shadow-xs">
+                            <ResolvedThumb
+                              src={imgUrl}
+                              alt={`Seq ${i + 1}`}
+                              className="w-full h-full object-contain"
+                            />
+                            <span
+                              className={`absolute bottom-0 inset-x-0 text-center text-[9px] font-black py-0.5 ${
+                                i === 0 ? 'bg-[#FACC15] text-neutral-900' : 'bg-neutral-900/80 text-white'
+                              }`}
+                            >
+                              {i === 0 ? 'Main' : `#${i + 1}`}
+                            </span>
+                          </div>
+                          {i < (editingProduct.gallery || []).length - 1 && (
+                            <span className="text-neutral-400 font-bold text-xs">→</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Upload Trigger / Dropzone */}
                 <input
-                  ref={mainInputRef}
+                  ref={galleryInputRef}
                   type="file"
                   accept="image/*"
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => handleMainFiles(e.target.files)}
+                  multiple
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    handleGalleryFiles(e.target.files)
+                  }
                   className="hidden"
                 />
 
                 <div
                   onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => handleDrop(e, handleMainFiles)}
-                  onClick={() => mainInputRef.current?.click()}
-                  className="border-2 border-dashed border-neutral-200 hover:border-neutral-300 rounded-xl py-6 sm:py-7 px-4 text-center cursor-pointer transition-colors bg-white"
+                  onDrop={(e) => handleDrop(e, handleGalleryFiles)}
+                  onClick={() => galleryInputRef.current?.click()}
+                  className="border-2 border-dashed border-neutral-200 hover:border-amber-400 rounded-xl py-5 px-4 text-center cursor-pointer transition-colors bg-neutral-50/50 hover:bg-amber-50/20"
                 >
-                  {uploadingMain ? (
-                    <Loader2 className="w-6 h-6 text-[#D97706] animate-spin mx-auto mb-2" />
+                  {uploadingGallery ? (
+                    <Loader2 className="w-6 h-6 text-[#D97706] animate-spin mx-auto mb-1.5" />
                   ) : (
-                    <Upload className="w-6 h-6 text-neutral-400 mx-auto mb-2" />
+                    <Upload className="w-6 h-6 text-neutral-400 mx-auto mb-1.5" />
                   )}
-                  <p className="text-xs font-bold text-neutral-700">
-                    Drag &amp; Drop main product picture here
+                  <p className="text-xs font-bold text-neutral-800">
+                    Add Photos to Product Gallery
                   </p>
-                  <p className="text-[11px] text-neutral-400 mt-1">
-                    or <span className="text-[#D97706] underline font-semibold">browse files</span> on your computer
+                  <p className="text-[11px] text-neutral-500 mt-0.5">
+                    Drag &amp; drop files here, or <span className="text-[#D97706] underline font-semibold">browse computer</span> (Select single or multiple)
                   </p>
                 </div>
 
-                {editingProduct.image && (
-                  <div className="w-28 h-28 sm:w-32 sm:h-32 p-1.5 bg-white border border-neutral-200 rounded-xl shadow-xs relative group">
-                    <ResolvedThumb
-                      src={editingProduct.image}
-                      alt={editingProduct.name}
-                      className="w-full h-full object-cover rounded-lg"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setEditingProduct({ ...editingProduct, image: '' })}
-                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-neutral-900 text-white flex items-center justify-center text-xs shadow-md cursor-pointer"
-                      aria-label="Remove image"
-                    >
-                      ×
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Block 6: PRODUCT GALLERY ALBUM (MULTI-PHOTO) */}
-              <div className="space-y-2">
-                <div className="border border-neutral-200/90 rounded-2xl p-4 sm:p-5 space-y-4 bg-white">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold uppercase tracking-wider text-neutral-800">
-                      PRODUCT GALLERY ALBUM
-                    </span>
-                    <span className="bg-neutral-900 text-[#FACC15] text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded shrink-0">
-                      MULTI-PHOTO
-                    </span>
-                  </div>
-
-                  <input
-                    ref={galleryInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                      handleGalleryFiles(e.target.files)
-                    }
-                    className="hidden"
-                  />
-
-                  <div
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => handleDrop(e, handleGalleryFiles)}
-                    onClick={() => galleryInputRef.current?.click()}
-                    className="border-2 border-dashed border-neutral-200 hover:border-neutral-300 rounded-xl py-6 sm:py-7 px-4 text-center cursor-pointer transition-colors bg-white"
-                  >
-                    {uploadingGallery ? (
-                      <Loader2 className="w-6 h-6 text-[#D97706] animate-spin mx-auto mb-2" />
-                    ) : (
-                      <Upload className="w-6 h-6 text-neutral-400 mx-auto mb-2" />
-                    )}
-                    <p className="text-xs font-bold text-neutral-700">
-                      Drag &amp; Drop gallery pictures here
-                    </p>
-                    <p className="text-[11px] text-neutral-400 mt-1">
-                      or <span className="text-[#D97706] underline font-semibold">browse files</span> on your computer
-                    </p>
-                  </div>
-
-                  {(editingProduct.gallery || []).length > 0 && (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {(editingProduct.gallery || []).map((imgUrl, idx) => (
-                        <div
-                          key={`${imgUrl}-${idx}`}
-                          className="aspect-square p-1.5 bg-white border border-neutral-200 rounded-xl shadow-xs relative group"
-                        >
-                          <ResolvedThumb
-                            src={imgUrl}
-                            alt={`Gallery ${idx + 1}`}
-                            className="w-full h-full object-cover rounded-lg"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const next = (editingProduct.gallery || []).filter(
-                                (_, i) => i !== idx
-                              );
-                              setEditingProduct({ ...editingProduct, gallery: next });
-                            }}
-                            className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-neutral-900 text-white flex items-center justify-center text-xs shadow-md cursor-pointer"
-                            aria-label="Remove gallery image"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
+                {/* Gallery Cards Grid with Drag-and-Drop and Touch Reordering */}
+                {(editingProduct.gallery || []).length > 0 ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-[11px] text-neutral-400 px-0.5">
+                      <span>{(editingProduct.gallery || []).length} image{(editingProduct.gallery || []).length > 1 ? 's' : ''} in gallery</span>
+                      <span className="hidden sm:inline">Tip: Drag any card to rearrange, or use arrows &amp; &apos;Set 1st&apos; buttons</span>
                     </div>
-                  )}
-                </div>
-                <p className="text-[11px] text-neutral-400 pl-1">
-                  These images populate the rotating image gallery at the top of the details view.
-                </p>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                      {(editingProduct.gallery || []).map((imgUrl, idx) => {
+                        const isPrimary = idx === 0;
+                        const isBeingDragged = draggedIndex === idx || touchDraggingIndex === idx;
+                        const isDropTarget = dragOverIndex === idx && !isBeingDragged;
+
+                        return (
+                          <div
+                            key={`gallery-card-${idx}-${imgUrl.slice(-20)}`}
+                            data-gallery-index={idx}
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData('text/plain', String(idx));
+                              e.dataTransfer.effectAllowed = 'move';
+                              setDraggedIndex(idx);
+                            }}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.dataTransfer.dropEffect = 'move';
+                              if (dragOverIndex !== idx) {
+                                setDragOverIndex(idx);
+                              }
+                            }}
+                            onDragLeave={() => {
+                              if (dragOverIndex === idx) {
+                                setDragOverIndex(null);
+                              }
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              const sourceIdx =
+                                draggedIndex !== null ? draggedIndex : Number(e.dataTransfer.getData('text/plain'));
+                              if (!isNaN(sourceIdx)) {
+                                reorderGallery(sourceIdx, idx);
+                              }
+                              setDraggedIndex(null);
+                              setDragOverIndex(null);
+                            }}
+                            onDragEnd={() => {
+                              setDraggedIndex(null);
+                              setDragOverIndex(null);
+                            }}
+                            className={`relative aspect-square p-1.5 bg-white rounded-xl border transition-all duration-150 flex flex-col justify-between group select-none ${
+                              isDropTarget
+                                ? 'border-[#EAB308] ring-3 ring-[#EAB308]/40 scale-[1.03] shadow-lg bg-amber-50/40 z-20'
+                                : isBeingDragged
+                                ? 'opacity-40 border-dashed border-amber-500 scale-95 shadow-inner'
+                                : 'border-neutral-200/90 hover:border-neutral-300 shadow-xs'
+                            }`}
+                          >
+                            {/* Drop indicator banner when dragging over */}
+                            {isDropTarget && (
+                              <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-[#EAB308] text-neutral-950 font-black text-[9px] uppercase px-2 py-0.5 rounded-full shadow-md z-30 pointer-events-none whitespace-nowrap">
+                                Drop Here (Position #{idx + 1})
+                              </div>
+                            )}
+
+                            {/* Top Badges & Drag Handle */}
+                            <div className="absolute top-2 inset-x-2 flex items-center justify-between z-10 pointer-events-none">
+                              {/* Position / Main badge */}
+                              {isPrimary ? (
+                                <span className="bg-[#FACC15] text-neutral-950 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded shadow-xs flex items-center gap-1">
+                                  <Star className="w-2.5 h-2.5 fill-neutral-950" />
+                                  <span>Main Image</span>
+                                </span>
+                              ) : (
+                                <span className="bg-neutral-900/80 backdrop-blur-xs text-white text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded shadow-xs">
+                                  #{idx + 1}
+                                </span>
+                              )}
+
+                              {/* Drag Handle (Supports both desktop grab and touch dragging) */}
+                              <div
+                                onTouchStart={(e) => {
+                                  e.stopPropagation();
+                                  setTouchDraggingIndex(idx);
+                                }}
+                                onTouchMove={(e) => {
+                                  if (touchDraggingIndex === null) return;
+                                  const touch = e.touches[0];
+                                  const elem = document.elementFromPoint(touch.clientX, touch.clientY);
+                                  const card = elem?.closest('[data-gallery-index]');
+                                  if (card) {
+                                    const targetIdx = Number(card.getAttribute('data-gallery-index'));
+                                    if (!isNaN(targetIdx) && targetIdx !== dragOverIndex) {
+                                      setDragOverIndex(targetIdx);
+                                    }
+                                  }
+                                }}
+                                onTouchEnd={() => {
+                                  if (
+                                    touchDraggingIndex !== null &&
+                                    dragOverIndex !== null &&
+                                    touchDraggingIndex !== dragOverIndex
+                                  ) {
+                                    reorderGallery(touchDraggingIndex, dragOverIndex);
+                                  }
+                                  setTouchDraggingIndex(null);
+                                  setDragOverIndex(null);
+                                }}
+                                className="pointer-events-auto p-1 bg-black/75 hover:bg-black text-white rounded cursor-grab active:cursor-grabbing transition-opacity shadow-xs"
+                                title="Drag handle to reorder"
+                              >
+                                <GripVertical className="w-3.5 h-3.5" />
+                              </div>
+                            </div>
+
+                            {/* Image Thumbnail */}
+                            <div className="w-full h-full rounded-lg overflow-hidden bg-neutral-50 flex items-center justify-center pt-5 pb-7">
+                              <ResolvedThumb
+                                src={imgUrl}
+                                alt={`Product photo ${idx + 1}`}
+                                className="w-full h-full object-contain pointer-events-none"
+                              />
+                            </div>
+
+                            {/* Bottom Card Bar / Controls */}
+                            <div className="absolute bottom-2 inset-x-2 flex items-center justify-between gap-1 z-10">
+                              {/* Move Left / Right buttons for mobile touch & keyboard/click */}
+                              <div className="flex items-center gap-0.5 bg-white/95 backdrop-blur-xs p-0.5 rounded-lg border border-neutral-200/90 shadow-xs">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    moveImage(idx, 'left');
+                                  }}
+                                  disabled={idx === 0}
+                                  className="p-1 hover:bg-neutral-100 disabled:opacity-25 disabled:pointer-events-none rounded text-neutral-700 cursor-pointer transition-colors"
+                                  title="Move Left"
+                                >
+                                  <ArrowLeft className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    moveImage(idx, 'right');
+                                  }}
+                                  disabled={idx === (editingProduct.gallery || []).length - 1}
+                                  className="p-1 hover:bg-neutral-100 disabled:opacity-25 disabled:pointer-events-none rounded text-neutral-700 cursor-pointer transition-colors"
+                                  title="Move Right"
+                                >
+                                  <ArrowRight className="w-3 h-3" />
+                                </button>
+                              </div>
+
+                              <div className="flex items-center gap-1">
+                                {/* Make Main Button (if not first) */}
+                                {!isPrimary && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      makeMainImage(idx);
+                                    }}
+                                    className="bg-white/95 hover:bg-[#FACC15] text-neutral-800 hover:text-neutral-950 font-bold text-[9px] uppercase px-1.5 py-1 rounded-lg border border-neutral-200/90 shadow-xs transition-colors cursor-pointer"
+                                    title="Move to 1st position (Make Main Product Image)"
+                                  >
+                                    Set 1st
+                                  </button>
+                                )}
+
+                                {/* Preview Button */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPreviewModalUrl(imgUrl);
+                                  }}
+                                  className="p-1 bg-white/95 hover:bg-neutral-100 text-neutral-700 rounded-lg border border-neutral-200/90 shadow-xs cursor-pointer transition-colors"
+                                  title="Preview image"
+                                >
+                                  <Eye className="w-3 h-3" />
+                                </button>
+
+                                {/* Remove Button (Does not delete file from storage) */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeGalleryImage(idx);
+                                  }}
+                                  className="p-1 bg-white/95 hover:bg-red-500 hover:text-white text-neutral-600 rounded-lg border border-neutral-200/90 shadow-xs cursor-pointer transition-colors"
+                                  title="Remove from product gallery"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-neutral-400 italic text-center py-3">
+                    No images in product gallery yet. Upload photos above.
+                  </p>
+                )}
               </div>
 
               {/* Block 7: PRODUCT DETAIL BANNERS (MULTI-PHOTO) */}
@@ -898,13 +1103,40 @@ export default function AdminProductsTab({
                 <button
                   type="button"
                   onClick={handleSaveSpecifications}
-                  disabled={isSaving || uploadingMain || uploadingGallery || uploadingBanners}
+                  disabled={isSaving || uploadingGallery || uploadingBanners}
                   className="flex-[1.35] bg-black hover:bg-neutral-900 disabled:opacity-50 text-white font-black text-[11px] uppercase tracking-wider py-3.5 rounded-lg transition-colors cursor-pointer"
                 >
                   {isSaving ? 'SAVING...' : 'SAVE SPECIFICATIONS'}
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox Preview Modal for Image Gallery */}
+      {previewModalUrl && (
+        <div
+          onClick={() => setPreviewModalUrl(null)}
+          className="fixed inset-0 z-60 bg-neutral-950/85 backdrop-blur-xs flex items-center justify-center p-4 cursor-zoom-out"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative max-w-2xl max-h-[85vh] bg-white p-2 rounded-2xl shadow-2xl overflow-hidden"
+          >
+            <button
+              type="button"
+              onClick={() => setPreviewModalUrl(null)}
+              className="absolute top-3 right-3 bg-neutral-900 text-white p-1.5 rounded-full hover:bg-red-600 transition-colors cursor-pointer z-10"
+              aria-label="Close preview"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <ResolvedThumb
+              src={previewModalUrl}
+              alt="Gallery Preview"
+              className="w-full h-auto max-h-[80vh] object-contain rounded-xl"
+            />
           </div>
         </div>
       )}
