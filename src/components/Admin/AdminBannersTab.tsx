@@ -10,7 +10,8 @@ import {
   Video,
   Upload,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  GripVertical
 } from 'lucide-react';
 import { StoreBanner, StoreSettings } from '../../types';
 import ImageUploader from './ImageUploader';
@@ -161,23 +162,37 @@ export default function AdminBannersTab({
     }
   };
 
+  const [draggedBannerIndex, setDraggedBannerIndex] = useState<number | null>(null);
+
+  const reorderBanners = (fromIndex: number, toIndex: number) => {
+    const nextBanners = [...localBanners];
+    const [moved] = nextBanners.splice(fromIndex, 1);
+    nextBanners.splice(toIndex, 0, moved);
+    
+    // Update displayOrder for all
+    const updated = nextBanners.map((b, i) => ({ ...b, displayOrder: i }));
+    setLocalBanners(updated);
+    updated.forEach(b => setDirtyBannerIds(prev => new Set(prev).add(b.id)));
+  };
+
   const handleAddBanner = async () => {
     const newBanner: StoreBanner = {
       id: `banner_${Date.now()}`,
       title: 'NEW CAMPAIGN BANNER',
       subtitle: '100% Authentic Supplements with Free KTM Valley Shipping',
-      imageUrl: 'https://i.ibb.co/DFnZ5Fy/Phone-Version-4-1-1-1.jpg',
+      imageUrl: '',
       videoUrl: '',
       buttonText: 'Shop Now',
       buttonLink: '#catalog',
       enabled: true,
-      displayOrder: localBanners.length + 1,
+      displayOrder: localBanners.length,
       displayLocation: 'hero',
       createdAt: new Date().toISOString()
     };
     setSaveError(null);
     try {
       await onSaveBanner(newBanner);
+      setLocalBanners(prev => [...prev, newBanner]);
     } catch (err: any) {
       console.error('Failed to add banner:', err);
       setSaveError(err?.message || 'Failed to add banner.');
@@ -505,15 +520,26 @@ export default function AdminBannersTab({
 
       {/* 2. PROMOTIONAL BANNERS LIST */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {localBanners.map((banner) => (
+        {localBanners.sort((a,b) => (a.displayOrder || 0) - (b.displayOrder || 0)).map((banner, index) => (
           <div
             key={banner.id}
+            draggable
+            onDragStart={() => setDraggedBannerIndex(index)}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (draggedBannerIndex !== null) {
+                reorderBanners(draggedBannerIndex, index);
+                setDraggedBannerIndex(null);
+              }
+            }}
             className={`bg-neutral-900 border rounded-2xl p-5 space-y-4 transition-all ${
               banner.enabled ? 'border-neutral-800' : 'border-neutral-800/40 opacity-60'
             }`}
           >
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
               <div className="flex items-center gap-2">
+                <GripVertical className="w-4 h-4 text-neutral-600 cursor-grab" />
                 <span className="px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#FFCD00]/15 text-[#FFCD00] border border-[#FFCD00]/30">
                   {banner.displayLocation === 'hero'
                     ? 'Homepage Hero'

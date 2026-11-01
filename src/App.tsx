@@ -7,7 +7,7 @@ import { useState, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import AnnouncementBar from './components/AnnouncementBar';
 import Navbar from './components/Navbar';
-import Hero from './components/Hero';
+import BannerCarousel from './components/BannerCarousel';
 import ProductGrid from './components/ProductGrid';
 import WhyFitYatra from './components/WhyFitYatra';
 import FaqSection from './components/FaqSection';
@@ -412,7 +412,7 @@ export default function App() {
       ) : (
         <>
           {/* 3. Hero Section with "REDEFINE YOURSELF." & "Buy Now" */}
-          <Hero onBuyNowClick={scrollToCatalog} heroBanner={activeHeroBanner} />
+          <BannerCarousel banners={banners} onBuyNowClick={scrollToCatalog} />
 
           {/* 4. "Our Most Loved Products" 2-Col Mobile / Responsive Grid */}
           <ProductGrid
